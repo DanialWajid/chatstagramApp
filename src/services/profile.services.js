@@ -1,0 +1,94 @@
+import axios from "axios";
+import * as SecureStore from "expo-secure-store";
+
+const API_URL = "https://catstagram-backend-production.up.railway.app/api/profile";
+
+export const updateProfile = async (formData, id) => {
+  try {
+    const token = await SecureStore.getItemAsync("token");
+    console.log("Update " + id);
+
+    const response = await axios.put(
+      `${API_URL}/update-profile/${id}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    throw error;
+  }
+};
+
+export const getProfileById = async (id) => {
+  try {
+    const token = await SecureStore.getItemAsync("token");
+    console.log("GetByID " + id);
+
+    const response = await axios.get(`${API_URL}/getProfile/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error getting profile by ID:", error);
+    throw error;
+  }
+};
+
+export const getUserStats = async (id) => {
+  try {
+    const token = await SecureStore.getItemAsync("token");
+
+    const response = await axios.get(`${API_URL}/stats/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error getting user stats:", error);
+    throw error;
+  }
+};
+
+export const deleteAccount = async (id) => {
+  try {
+    const token = await SecureStore.getItemAsync("token");
+
+    const response = await axios.delete(`${API_URL}/delete-account/${id}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    throw error;
+  }
+};
+
+export const checkIfBlocked = async (userId, profileId) => {
+  try {
+    const token = await SecureStore.getItemAsync("token");
+
+    const response = await axios.get(
+      `${API_URL}/check-blocked/${userId}/${profileId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    return response.data.isBlocked;
+  } catch (error) {
+    console.error("Error checking if blocked:", error);
+    throw error;
+  }
+};
