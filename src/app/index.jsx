@@ -22,7 +22,7 @@ import TwoFactorAuthScreen from "./screen/TwoFactor";
 const Stack = createNativeStackNavigator();
 
 const AppContent = () => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, twoFactorRequired } = useAuthStore(); // 👈 grab 2FA flag
   const [fontsLoaded, setFontsLoaded] = useState(false);
 
   useEffect(() => {
@@ -45,29 +45,28 @@ const AppContent = () => {
   }
 
   return (
-    <Stack.Navigator
-      screenOptions={{ headerShown: false }}
-      initialRouteName={isAuthenticated ? "Home" : "Login"}
-    >
-      <Stack.Screen name="Signup" component={Signup} />
-      <Stack.Screen name="Friends" component={Friends} />
-      <Stack.Screen name="Login" component={Login} />
-      <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
-      <Stack.Screen name="Verification" component={Verification} />
-      <Stack.Screen name="ExploreFriends" component={FriendsExplore} />
-      <Stack.Screen name="FriendRequests" component={Requests} />
-      <Stack.Screen name="Home" component={ChatPage} />
-      <Stack.Screen name="ChatMessage" component={ChatMessage} />
-      <Stack.Screen name="CreateGroupChat" component={CreateGroupChat} />
-      <Stack.Screen name="GroupChatSettings" component={GroupChatSettings} />
-      <Stack.Screen name="TwoFactor" component={TwoFactorAuthScreen} />
-      <Stack.Screen
-        name="Profile"
-        component={Profile}
-        options={({ route }) => ({
-          title: route.params?.name || "Profile",
-        })}
-      />
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      {!isAuthenticated ? (
+        <>
+          <Stack.Screen name="Login" component={Login} />
+          <Stack.Screen name="Signup" component={Signup} />
+          <Stack.Screen name="ForgetPassword" component={ForgetPassword} />
+          <Stack.Screen name="Verification" component={Verification} />
+          <Stack.Screen name="TwoFactor" component={TwoFactorAuthScreen} />
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="Home" component={ChatPage} />
+          <Stack.Screen name="Friends" component={Friends} />
+          <Stack.Screen name="Profile" component={Profile} />
+          <Stack.Screen name="ChatMessage" component={ChatMessage} />
+          <Stack.Screen name="CreateGroupChat" component={CreateGroupChat} />
+          <Stack.Screen
+            name="GroupChatSettings"
+            component={GroupChatSettings}
+          />
+        </>
+      )}
     </Stack.Navigator>
   );
 };

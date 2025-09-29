@@ -137,8 +137,6 @@ const ChatPage = () => {
   // Enhanced Socket Connection with better error handling and reconnection
   useEffect(() => {
     if (user?._id && user?.name) {
-      console.log("Connecting to socket for user:", user.name);
-
       // Connect to socket
       SocketService.connect(user._id, user.name);
 

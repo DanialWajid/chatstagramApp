@@ -11,6 +11,7 @@ import {
 import { Shield, Lock } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuthStore } from "../../store/authStore";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function TwoFactorAuthScreen() {
   const [code, setCode] = useState("");
@@ -19,24 +20,33 @@ export default function TwoFactorAuthScreen() {
   const { verifyTwoFactor, isLoading, error, twoFactorRequired } =
     useAuthStore();
 
-  useEffect(() => {
-    // Instead, use AsyncStorage in React Native:
-    // const pendingUserId = await AsyncStorage.getItem("pendingUserId");
+  const [pendingUserId, setPendingUserId] = useState(null);
 
-    if (!pendingUserId && !twoFactorRequired) {
-      navigation.navigate("Login");
-    } else {
-      setIsPageLoading(false);
-    }
+  useEffect(() => {
+    const checkPendingUser = async () => {
+      const storedUserId = await AsyncStorage.getItem("pendingUserId");
+      if (!storedUserId && !twoFactorRequired) {
+        navigation.navigate("Login");
+      } else {
+        setPendingUserId(storedUserId); // ✅ store it in state
+        setIsPageLoading(false);
+      }
+    };
+
+    checkPendingUser();
   }, [navigation, twoFactorRequired]);
 
   const handleVerification = async () => {
-    if (!pendingUserId) {
-      Alert.alert("Error", "No pending authentication session");
-      return;
-    }
+    const result = await verifyTwoFactor(code);
 
-    await verifyTwoFactor(code, pendingUserId);
+    if (result.success) {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home" }],
+      });
+    } else {
+      Alert.alert("Verification failed", result.error || "Try again");
+    }
   };
 
   if (isPageLoading) {

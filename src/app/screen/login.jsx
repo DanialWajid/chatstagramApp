@@ -33,11 +33,15 @@ const Login = ({ onLogin }) => {
     try {
       setLoading(true);
       const data = await login(email, password);
-      if (data.success) {
+      console.log("Two Factor:", data.twoFactorRequired);
+
+      if (data.twoFactorRequired === false) {
         navigation.navigate("Home");
-        Alert.alert("Success", data.message);
+        Alert.alert("Success", "Login successful!");
+      } else if (data.twoFactorRequired) {
+        navigation.navigate("TwoFactor");
       } else {
-        Alert.alert("Invalid Credentials", data.message);
+        Alert.alert("Invalid Credentials", data.error || "Login failed");
       }
     } catch (error) {
       Alert.alert("Login Failed", error.message);

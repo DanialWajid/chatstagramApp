@@ -1,19 +1,19 @@
 import { create } from "zustand";
 import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Dynamic API URL configuration
 const getApiUrl = () => {
   const isEmulator = Constants.manifest?.debuggerHost;
 
-  // Android emulator
   if (isEmulator && isEmulator.includes(":")) {
+    // Android emulator
     return `http://0.0.0.0:8000/api/user`;
   }
 
-  // Physical device (replace with your computer's IP)
+  // Physical device (replace with your IP)
   return "http://192.168.0.109:8000/api/user";
 };
 
@@ -26,6 +26,7 @@ export const useAuthStore = create((set) => ({
   isLoading: false,
   error: null,
   message: null,
+  twoFactorRequired: false,
 
   setUser: (updatedUser) =>
     set((state) => ({
@@ -69,13 +70,12 @@ export const useAuthStore = create((set) => ({
 
       console.log("[Signup] Response:", response.data);
 
-      // Don't look for token yet – just navigate to verification screen
       set({
         isLoading: false,
         message: response.data.message,
       });
 
-      return { email }; // return email to use on Verification screen
+      return { email };
     } catch (error) {
       console.error("[Signup] Full error:", {
         message: error.message,
@@ -95,42 +95,7 @@ export const useAuthStore = create((set) => ({
       throw error;
     }
   },
-  verifyTwoFactor: async (code, userId) => {
-    set({ isLoading: true, error: null });
-    try {
-      const response = await axios.post(`${API_URL}/verify-2fa`, {
-        token: code,
-        userId,
-        tempToken: localStorage.getItem("pendingAuthToken"), // if you have one
-      });
 
-      const token = response.data.token;
-      const user = response.data.user;
-
-      localStorage.removeItem("pendingUserId");
-      localStorage.removeItem("pendingAuthToken");
-
-      storeToken(token);
-      localStorage.setItem("userInfo", JSON.stringify({ user }));
-
-      set({
-        user,
-        token,
-        isAuthenticated: true,
-        isLoading: false,
-        twoFactorRequired: false,
-      });
-
-      // Return success to trigger navigation
-      return { success: true };
-    } catch (error) {
-      set({
-        error: error.response?.data?.message || "Invalid verification code",
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
   verifyEmail: async (code) => {
     set({ isLoading: true, error: null });
 
@@ -147,22 +112,16 @@ export const useAuthStore = create((set) => ({
         }
       );
 
-      // Debug log
       console.log("[VerifyEmail] Response:", response.data);
 
-      // Get token from Authorization header
       const authHeader = response.headers.authorization;
       const token = authHeader?.startsWith("Bearer ")
         ? authHeader.split(" ")[1]
         : null;
 
       if (token) {
-        try {
-          await SecureStore.setItemAsync("token", token);
-          console.log("✅ Token stored successfully in SecureStore.");
-        } catch (error) {
-          console.log("❌ Failed to store token in SecureStore:", error);
-        }
+        await SecureStore.setItemAsync("token", token);
+        console.log("✅ Token stored successfully.");
       }
 
       if (response.data?.user) {
@@ -207,32 +166,97 @@ export const useAuthStore = create((set) => ({
       });
 
       const data = await response.json();
-      console.log("Data", data);
+      console.log("Login response:", data);
+      console.log("Two factor detected", data.twoFactorRequired);
 
       if (!response.ok) {
-        console.log("Login failed:", data.message);
-        throw new Error(data.message || "Login failed");
+        throw new Error(data.message || "Invalid Email or Password");
       }
 
-      // Store token securely
-      await SecureStore.setItemAsync("token", data.token);
-      // Optionally save user data to AsyncStorage
-      await AsyncStorage.setItem("userInfo", JSON.stringify(data.user));
+      console.log("userid", data.userId);
+      if (data.twoFactorRequired) {
+        if (data.userId) {
+          await AsyncStorage.setItem("pendingUserId", String(data.userId));
+        }
 
-      console.log("Login success: token stored");
+        set({
+          user: data.user,
+          token: null,
+          isAuthenticated: false,
+          twoFactorRequired: true,
+        });
+
+        return { twoFactorRequired: true, userId: data.userId };
+      }
+
+      // Save token securely
+      await SecureStore.setItemAsync("token", data.token);
+      await AsyncStorage.setItem("userInfo", JSON.stringify(data.user));
 
       set({
         user: data.user,
         token: data.token,
         isAuthenticated: true,
+        twoFactorRequired: false,
       });
 
       return { success: true };
     } catch (error) {
       console.error("Login error:", error.message);
+      set({
+        isAuthenticated: false,
+        twoFactorRequired: false,
+      });
       return { success: false, error: error.message };
     }
   },
+
+  verifyTwoFactor: async (code) => {
+    try {
+      // get stored userId
+      console.log("Start of verfiy 2FA");
+      const pendingUserId = await AsyncStorage.getItem("pendingUserId");
+
+      if (!pendingUserId) {
+        throw new Error("No pending user found. Please login again.");
+      }
+
+      const response = await fetch(`${API_URL}/verify-2fa`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: code, userId: pendingUserId }),
+      });
+
+      const data = await response.json();
+      console.log("Verify 2FA response:", data);
+
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid verification code");
+      }
+
+      // Clean up
+      await AsyncStorage.removeItem("pendingUserId");
+
+      await SecureStore.setItemAsync("token", data.token);
+      await AsyncStorage.setItem("userInfo", JSON.stringify(data.user));
+
+      set({
+        user: data.user,
+        token: data.token,
+        isAuthenticated: true,
+        twoFactorRequired: false,
+      });
+      console.log("verification success");
+
+      return { success: true, twoFactorEnabled: data.twoFactorEnabled };
+    } catch (error) {
+      console.error("2FA verification error:", error.message);
+      return { success: false, error: error.message };
+    }
+  },
+
   changePassword: async (currentPassword, newPassword) => {
     set({ isLoading: true, error: null, message: null });
     try {
@@ -250,18 +274,16 @@ export const useAuthStore = create((set) => ({
       });
     }
   },
-  // Logout function
+
   logout: async () => {
     try {
-      // Retrieve the token from SecureStore or AsyncStorage
       const token = await SecureStore.getItemAsync("token");
 
       if (token) {
-        // Send the logout request to your backend to blacklist the token
         const response = await fetch(`${API_URL}/logout`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`, // Send token as Authorization header
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         });
@@ -269,14 +291,11 @@ export const useAuthStore = create((set) => ({
         const data = await response.json();
 
         if (response.ok) {
-          // Successfully logged out, token blacklisted
           console.log("Logout successful:", data.message);
 
-          // Delete token from SecureStore and AsyncStorage
           await SecureStore.deleteItemAsync("token");
           await AsyncStorage.removeItem("userInfo");
 
-          // Update state to reflect that the user is logged out
           set({
             user: null,
             token: null,
@@ -290,6 +309,7 @@ export const useAuthStore = create((set) => ({
       console.error("Logout error:", error.message);
     }
   },
+
   forgotPassword: async (email) => {
     set({ isLoading: true, error: null, message: null });
 
@@ -329,9 +349,6 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  // Clear error messages
   clearError: () => set({ error: null }),
-
-  // Clear success messages
   clearMessage: () => set({ message: null }),
 }));
