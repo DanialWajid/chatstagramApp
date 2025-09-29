@@ -14,11 +14,24 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Linking,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
-import { User, Send, Users, Settings, Bot } from "lucide-react-native";
+import {
+  User,
+  Send,
+  Users,
+  Settings,
+  Bot,
+  Paperclip,
+  File,
+  Image as ImageIcon,
+  Download,
+} from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
@@ -160,6 +173,9 @@ const ChatMessage = () => {
   const [typingUsers, setTypingUsers] = useState([]);
   const [typingTimeout, setTypingTimeout] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [showFileOptions, setShowFileOptions] = useState(false);
+
   const { user } = useAuthStore();
   const navigation = useNavigation();
   const route = useRoute();
@@ -296,28 +312,39 @@ const ChatMessage = () => {
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || sending) return;
+    if ((!newMessage.trim() && !selectedFile) || sending) return;
 
     const messageContent = newMessage.trim();
-    console.log("Sending message:", messageContent);
+    console.log("Sending message:", messageContent, "with file:", selectedFile);
+
     setNewMessage("");
+    const fileToSend = selectedFile;
+    setSelectedFile(null);
 
     try {
       setSending(true);
       const token = await SecureStore.getItemAsync("token");
 
-      const response = await axios.post(
-        `${API_URL}/message/`,
-        {
-          content: messageContent,
-          chatId: chatId,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const formData = new FormData();
+      formData.append("content", messageContent);
+      formData.append("chatId", chatId);
 
-      const sentMessage = response.data;
+      if (fileToSend) {
+        formData.append("file", {
+          uri: fileToSend.uri,
+          name: fileToSend.name,
+          type: fileToSend.type,
+        });
+      }
+
+      const response = await axios.post(`${API_URL}/message/`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      const sentMessage = response.data.data || response.data;
       console.log("Message sent successfully:", sentMessage);
 
       setMessages((prevMessages) => [...prevMessages, sentMessage]);
@@ -339,6 +366,7 @@ const ChatMessage = () => {
       console.error("Error sending message:", error);
       Alert.alert("Error", "Failed to send message");
       setNewMessage(messageContent);
+      setSelectedFile(fileToSend);
     } finally {
       setSending(false);
     }
@@ -396,9 +424,101 @@ const ChatMessage = () => {
     }
   };
 
+  const selectImageFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setSelectedFile({
+          uri: asset.uri,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
+          type: asset.type || "image/jpeg",
+          size: asset.fileSize || 0,
+        });
+        setShowFileOptions(false);
+      }
+    } catch (error) {
+      console.error("Error selecting image:", error);
+      Alert.alert("Error", "Failed to select image");
+    }
+  };
+
+  const selectDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        if (asset.size > 10 * 1024 * 1024) {
+          Alert.alert("Error", "File size must be less than 10MB");
+          return;
+        }
+
+        setSelectedFile({
+          uri: asset.uri,
+          name: asset.name,
+          type: asset.mimeType || "application/octet-stream",
+          size: asset.size,
+        });
+        setShowFileOptions(false);
+      }
+    } catch (error) {
+      console.error("Error selecting document:", error);
+      Alert.alert("Error", "Failed to select document");
+    }
+  };
+
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+  };
+
   const MessageBubble = ({ item }) => {
     const { theme } = useTheme();
     const isMyMessage = item.sender._id === user._id;
+    const isFileMessage = item.type === "file" && item.fileUrl;
+
+    const openFile = async () => {
+      if (item.fileUrl) {
+        try {
+          const fullUrl = item.fileUrl.startsWith("http")
+            ? item.fileUrl
+            : `http://192.168.0.109:8000${item.fileUrl}`;
+
+          const supported = await Linking.canOpenURL(fullUrl);
+          if (supported) {
+            await Linking.openURL(fullUrl);
+          } else {
+            Alert.alert("Error", "Cannot open this file type");
+          }
+        } catch (error) {
+          console.error("Error opening file:", error);
+          Alert.alert("Error", "Failed to open file");
+        }
+      }
+    };
+
+    const isImage = (fileType) => {
+      return fileType && fileType.startsWith("image/");
+    };
+
+    const formatFileSize = (bytes) => {
+      if (bytes === 0) return "0 Bytes";
+      const k = 1024;
+      const sizes = ["Bytes", "KB", "MB", "GB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (
+        Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+      );
+    };
 
     return (
       <View
@@ -421,16 +541,101 @@ const ChatMessage = () => {
               : [styles.theirMessageBubble, { backgroundColor: theme.input }],
           ]}
         >
-          <Text
-            style={[
-              styles.messageText,
-              isMyMessage
-                ? { color: theme.buttonText || "#FFFFFF" }
-                : { color: theme.text },
-            ]}
-          >
-            {item.content}
-          </Text>
+          {isFileMessage ? (
+            <TouchableOpacity onPress={openFile} style={styles.fileContainer}>
+              {isImage(item.fileType) ? (
+                <View>
+                  <Image
+                    source={{
+                      uri: item.fileUrl.startsWith("http")
+                        ? item.fileUrl
+                        : `http://192.168.0.109:8000${item.fileUrl}`,
+                    }}
+                    style={styles.imageMessage}
+                    resizeMode="cover"
+                  />
+                  {item.content && (
+                    <Text
+                      style={[
+                        styles.messageText,
+                        { marginTop: 8 },
+                        isMyMessage
+                          ? { color: theme.buttonText || "#FFFFFF" }
+                          : { color: theme.text },
+                      ]}
+                    >
+                      {item.content}
+                    </Text>
+                  )}
+                </View>
+              ) : (
+                <View style={styles.documentContainer}>
+                  <View style={styles.documentIcon}>
+                    <File size={24} color={theme.accent} />
+                  </View>
+                  <View style={styles.documentInfo}>
+                    <Text
+                      style={[
+                        styles.documentName,
+                        isMyMessage
+                          ? { color: theme.buttonText || "#FFFFFF" }
+                          : { color: theme.text },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.fileName || "Document"}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.documentSize,
+                        isMyMessage
+                          ? {
+                              color: theme.buttonText || "#FFFFFF",
+                              opacity: 0.7,
+                            }
+                          : { color: theme.secondaryText },
+                      ]}
+                    >
+                      {formatFileSize(item.fileSize || 0)}
+                    </Text>
+                  </View>
+                  <Download
+                    size={20}
+                    color={
+                      isMyMessage
+                        ? theme.buttonText || "#FFFFFF"
+                        : theme.secondaryText
+                    }
+                  />
+                </View>
+              )}
+
+              {item.content && !isImage(item.fileType) && (
+                <Text
+                  style={[
+                    styles.messageText,
+                    { marginTop: 8 },
+                    isMyMessage
+                      ? { color: theme.buttonText || "#FFFFFF" }
+                      : { color: theme.text },
+                  ]}
+                >
+                  {item.content}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <Text
+              style={[
+                styles.messageText,
+                isMyMessage
+                  ? { color: theme.buttonText || "#FFFFFF" }
+                  : { color: theme.text },
+              ]}
+            >
+              {item.content}
+            </Text>
+          )}
         </View>
 
         <Text
@@ -691,9 +896,93 @@ const ChatMessage = () => {
         onAiReply={handleAiReply}
       />
 
+      {showFileOptions && (
+        <View style={styles.fileOptionsOverlay}>
+          <TouchableOpacity
+            style={styles.fileOptionsBackdrop}
+            onPress={() => setShowFileOptions(false)}
+          />
+          <View
+            style={[
+              styles.fileOptionsContainer,
+              { backgroundColor: theme.card },
+            ]}
+          >
+            <TouchableOpacity
+              style={[styles.fileOption, { borderBottomColor: theme.border }]}
+              onPress={selectImageFromGallery}
+            >
+              <ImageIcon size={24} color={theme.accent} />
+              <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                Select Image
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.fileOption}
+              onPress={selectDocument}
+            >
+              <File size={24} color={theme.accent} />
+              <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                Select Document
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {selectedFile && (
+        <View
+          style={[
+            styles.selectedFileContainer,
+            { backgroundColor: theme.card, borderTopColor: theme.border },
+          ]}
+        >
+          <View style={styles.selectedFileContent}>
+            <View style={styles.selectedFileIcon}>
+              {selectedFile.type.startsWith("image/") ? (
+                <ImageIcon size={20} color={theme.accent} />
+              ) : (
+                <File size={20} color={theme.accent} />
+              )}
+            </View>
+            <View style={styles.selectedFileInfo}>
+              <Text
+                style={[styles.selectedFileName, { color: theme.text }]}
+                numberOfLines={1}
+              >
+                {selectedFile.name}
+              </Text>
+              <Text
+                style={[
+                  styles.selectedFileSize,
+                  { color: theme.secondaryText },
+                ]}
+              >
+                {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={removeSelectedFile}
+              style={styles.removeFileButton}
+            >
+              <Text style={[styles.removeFileText, { color: theme.accent }]}>
+                ✕
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <View style={dynamicStyles.inputContainer}>
+        <TouchableOpacity
+          style={[styles.attachButton, { backgroundColor: theme.input }]}
+          onPress={() => setShowFileOptions(true)}
+        >
+          <Paperclip size={20} color={theme.secondaryText} />
+        </TouchableOpacity>
+
         <TextInput
-          style={dynamicStyles.textInput}
+          style={[dynamicStyles.textInput, { marginLeft: 8 }]}
           value={newMessage}
           onChangeText={handleTyping}
           placeholder={`Message ${
@@ -710,12 +999,12 @@ const ChatMessage = () => {
         <TouchableOpacity
           style={[
             styles.sendButton,
-            newMessage.trim() && !sending
+            (newMessage.trim() || selectedFile) && !sending
               ? dynamicStyles.sendButtonActive
               : dynamicStyles.sendButtonInactive,
           ]}
           onPress={sendMessage}
-          disabled={!newMessage.trim() || sending}
+          disabled={(!newMessage.trim() && !selectedFile) || sending}
         >
           {sending ? (
             <ActivityIndicator size={16} color={theme.buttonText} />
@@ -723,7 +1012,7 @@ const ChatMessage = () => {
             <Send
               size={20}
               color={
-                newMessage.trim() && !sending
+                (newMessage.trim() || selectedFile) && !sending
                   ? theme.buttonText
                   : theme.secondaryText
               }
@@ -805,7 +1094,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  // Message styling
   messageWrapper: {
     marginVertical: 4,
     maxWidth: "80%",
@@ -856,7 +1144,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 100,
   },
-  // Typing indicator
   typingContainer: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -890,6 +1177,116 @@ const styles = StyleSheet.create({
   },
   dot3: {
     opacity: 1,
+  },
+  attachButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fileOptionsOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "flex-end",
+    zIndex: 1000,
+  },
+  fileOptionsBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+  fileOptionsContainer: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+  },
+  fileOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  fileOptionText: {
+    fontSize: 16,
+    marginLeft: 16,
+    fontWeight: "500",
+  },
+  selectedFileContainer: {
+    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  selectedFileContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  selectedFileIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectedFileInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  selectedFileName: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  selectedFileSize: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  removeFileButton: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  removeFileText: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  fileContainer: {
+    minWidth: 200,
+  },
+  imageMessage: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+  },
+  documentContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    minWidth: 200,
+  },
+  documentIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  documentInfo: {
+    flex: 1,
+  },
+  documentName: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  documentSize: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });
 
