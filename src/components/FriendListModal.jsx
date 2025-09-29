@@ -27,7 +27,7 @@ const FriendsListModal = ({ isOpen, onClose, userId }) => {
   const navigation = useNavigation();
   const { theme } = useTheme();
 
-  const API_URL = "https://catstagram-backend-production.up.railway.app/";
+  const API_URL = "http://192.168.0.109:8000/";
 
   useEffect(() => {
     if (isOpen) {

@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from "react";
+"use client";
+
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -25,7 +27,7 @@ import FriendProtectedContent from "../../components/FriendStatus";
 import EditProfileModal from "../../components/EditProfileModal";
 import SideNav from "../../components/SideNav";
 import Navbar from "../../components/Navbar";
-import UserPosts from "../../components/UserPosts";
+import { ArrowLeft } from "lucide-react-native";
 import { useTheme } from "../../store/themeContext";
 
 const Profile = () => {
@@ -102,6 +104,21 @@ const Profile = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Navbar />
+
+      <View
+        style={[
+          styles.backButtonContainer,
+          { backgroundColor: theme.background },
+        ]}
+      >
+        <TouchableOpacity
+          style={[styles.backButton, { backgroundColor: theme.card }]}
+          onPress={() => navigation.goBack()}
+        >
+          <ArrowLeft size={24} color={theme.text} />
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -135,35 +152,6 @@ const Profile = () => {
             </View>
 
             <View style={styles.profileDetails}>
-              <View style={styles.statsContainer}>
-                <View style={styles.statItem}>
-                  <Text style={[styles.statValue, { color: theme.text }]}>
-                    {stats.postCount || 0}
-                  </Text>
-                  <Text
-                    style={[styles.statLabel, { color: theme.secondaryText }]}
-                  >
-                    Posts
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.statItem}
-                  onPress={() =>
-                    (!profile.isPrivate && !isBlocked) && setShowFriendsModal(true)
-                  }
-                >
-                  <Text style={[styles.statValue, { color: theme.text }]}>
-                    {stats.friendsCount || 0}
-                  </Text>
-                  <Text
-                    style={[styles.statLabel, { color: theme.secondaryText }]}
-                  >
-                    Friends
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
               <Text style={[styles.profileName, { color: theme.text }]}>
                 {isBlocked ? "Catstagram User" : profile.name}
               </Text>
@@ -210,16 +198,7 @@ const Profile = () => {
         <FriendProtectedContent
           userId={id}
           fallbackMessage="Only friends can view this user's posts and friends list"
-        >
-          {!isBlocked && (
-            <View style={styles.postsContainer}>
-              <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                User Posts
-              </Text>
-              <UserPosts userId={id} scrollEnabled={false} />
-            </View>
-          )}
-        </FriendProtectedContent>
+        ></FriendProtectedContent>
       </ScrollView>
 
       <FriendsListModal
@@ -430,6 +409,23 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 16,
     textAlign: "center",
+  },
+  backButtonContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
 });
 

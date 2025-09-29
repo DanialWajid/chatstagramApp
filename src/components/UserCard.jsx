@@ -16,7 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAuthStore } from "../store/authStore";
 import { useTheme } from "../store/themeContext";
 
-const API_URL = "https://catstagram-backend-production.up.railway.app/api";
+const API_URL = "http://192.168.0.109:8000/api";
 
 const UserCard = ({ cardUser, isPrivate, isFriend, onFriendUpdate }) => {
   const navigation = useNavigation();
@@ -334,18 +334,6 @@ const UserCard = ({ cardUser, isPrivate, isFriend, onFriendUpdate }) => {
           </Text>
 
           <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: theme.button }]}
-              onPress={() =>
-                navigation.navigate("Profile", { id: cardUser._id })
-              }
-              disabled={isLoading}
-            >
-              <Text style={[styles.buttonText, { color: theme.buttonText }]}>
-                View Profile
-              </Text>
-            </TouchableOpacity>
-
             <TouchableOpacity
               style={[
                 styles.button,

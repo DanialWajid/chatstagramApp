@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -20,6 +22,7 @@ import { User, MessageCircle, Users, Plus } from "lucide-react-native";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import SideNav from "../../components/SideNav";
+import Navbar from "../../components/Navbar";
 
 const { width } = Dimensions.get("window");
 
@@ -97,31 +100,13 @@ const TypingIndicator = ({ typingUsers, isGroupChat, theme }) => {
       </Text>
       <View style={styles.dotsContainer}>
         <Animated.View
-          style={[
-            styles.dot,
-            {
-              opacity: dot1,
-              backgroundColor: theme.accent,
-            },
-          ]}
+          style={[styles.dot, { opacity: dot1, backgroundColor: theme.accent }]}
         />
         <Animated.View
-          style={[
-            styles.dot,
-            {
-              opacity: dot2,
-              backgroundColor: theme.accent,
-            },
-          ]}
+          style={[styles.dot, { opacity: dot2, backgroundColor: theme.accent }]}
         />
         <Animated.View
-          style={[
-            styles.dot,
-            {
-              opacity: dot3,
-              backgroundColor: theme.accent,
-            },
-          ]}
+          style={[styles.dot, { opacity: dot3, backgroundColor: theme.accent }]}
         />
       </View>
     </View>
@@ -147,7 +132,7 @@ const ChatPage = () => {
   const navbarTranslateY = useRef(new Animated.Value(0)).current;
   const isScrollingDown = useRef(false);
 
-  const API_URL = "https://catstagram-backend-production.up.railway.app/api";
+  const API_URL = "http://192.168.0.109:8000/api";
 
   // Enhanced Socket Connection with better error handling and reconnection
   useEffect(() => {
@@ -651,10 +636,11 @@ const ChatPage = () => {
       justifyContent: "space-between",
       paddingHorizontal: 16,
       paddingVertical: 12,
-      paddingTop: 50,
+      paddingTop: 12,
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
       backgroundColor: theme.card,
+      marginTop: 100,
     },
     loadingContainer: {
       flex: 1,
@@ -707,6 +693,13 @@ const ChatPage = () => {
       borderTopWidth: 1,
       borderTopColor: theme.border,
       transform: [{ translateY: navbarTranslateY }],
+    },
+    navbarContainer: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 1000,
     },
   };
 
@@ -948,6 +941,10 @@ const ChatPage = () => {
 
   return (
     <View style={dynamicStyles.container}>
+      <View style={dynamicStyles.navbarContainer}>
+        <Navbar />
+      </View>
+
       <View style={dynamicStyles.header}>
         <TouchableOpacity
           style={styles.backButton}

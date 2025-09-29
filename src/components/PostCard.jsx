@@ -21,7 +21,6 @@ import {
   Bookmark,
 } from "lucide-react-native";
 import { format } from "date-fns";
-import { savePost, unsavePost } from "../services/savedPosts.services";
 import { likePost, unlikePost } from "../services/likedPosts.services";
 import axios from "axios";
 import CommentSection from "./CommentSection";
@@ -95,7 +94,7 @@ const PostCard = ({ post, user }) => {
           onPress: async () => {
             try {
               const response = await axios.delete(
-                `https://catstagram-backend-production.up.railway.app/api/posts/${post._id}`,
+                `http://192.168.0.109:8000/api/posts/${post._id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${token}`,

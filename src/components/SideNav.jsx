@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Home, Bookmark, Compass, PlusCircle } from "lucide-react-native";
+import { Home, Compass } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuthStore } from "../store/authStore";
 import { useTheme } from "../store/themeContext";
@@ -28,15 +28,6 @@ const SideNav = () => {
         screen: "ExploreFriends",
       },
       {
-        icon: <PlusCircle color="#fff" size={30} />,
-        screen: "CreatePost",
-        isSpecial: true,
-      },
-      {
-        icon: <Bookmark color={theme.text} size={24} />,
-        screen: "SavedPosts",
-      },
-      {
         icon: (
           <TouchableOpacity
             onPress={() => navigation.navigate("Profile", { id: user?._id })}
@@ -45,10 +36,7 @@ const SideNav = () => {
               source={{
                 uri: user?.profileImage || "https://example.com/default.jpg",
               }}
-              style={[
-                styles.profileImage,
-                { borderColor: theme.accent },
-              ]}
+              style={[styles.profileImage, { borderColor: theme.accent }]}
               key={user?.profileImage || "default"}
             />
           </TouchableOpacity>

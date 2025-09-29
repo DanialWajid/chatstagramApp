@@ -30,7 +30,7 @@ const CreateGroupChat = () => {
   const { theme } = useTheme();
   const navigation = useNavigation();
 
-  const API_URL = "https://catstagram-backend-production.up.railway.app/api";
+  const API_URL = "http://192.168.0.109:8000/api";
 
   useEffect(() => {
     fetchFriends();
