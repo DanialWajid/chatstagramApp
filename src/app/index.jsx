@@ -61,6 +61,8 @@ const AppContent = () => {
           <Stack.Screen name="Profile" component={Profile} />
           <Stack.Screen name="ChatMessage" component={ChatMessage} />
           <Stack.Screen name="CreateGroupChat" component={CreateGroupChat} />
+          <Stack.Screen name="ExploreFriends" component={FriendsExplore} />
+          <Stack.Screen name="FriendRequests" component={Requests} />
           <Stack.Screen
             name="GroupChatSettings"
             component={GroupChatSettings}

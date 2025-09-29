@@ -40,8 +40,6 @@ const Login = ({ onLogin }) => {
         Alert.alert("Success", "Login successful!");
       } else if (data.twoFactorRequired) {
         navigation.navigate("TwoFactor");
-      } else {
-        Alert.alert("Invalid Credentials", data.error || "Login failed");
       }
     } catch (error) {
       Alert.alert("Login Failed", error.message);

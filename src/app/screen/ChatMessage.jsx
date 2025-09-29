@@ -489,13 +489,11 @@ const ChatMessage = () => {
     const openFile = async () => {
       if (item.fileUrl) {
         try {
-          const fullUrl = item.fileUrl.startsWith("http")
-            ? item.fileUrl
-            : `http://192.168.0.109:8000${item.fileUrl}`;
+          const fileUrl = item.fileUrl; // Cloudinary URLs are already complete
 
-          const supported = await Linking.canOpenURL(fullUrl);
+          const supported = await Linking.canOpenURL(fileUrl);
           if (supported) {
-            await Linking.openURL(fullUrl);
+            await Linking.openURL(fileUrl);
           } else {
             Alert.alert("Error", "Cannot open this file type");
           }
@@ -546,11 +544,7 @@ const ChatMessage = () => {
               {isImage(item.fileType) ? (
                 <View>
                   <Image
-                    source={{
-                      uri: item.fileUrl.startsWith("http")
-                        ? item.fileUrl
-                        : `http://192.168.0.109:8000${item.fileUrl}`,
-                    }}
+                    source={{ uri: item.fileUrl }}
                     style={styles.imageMessage}
                     resizeMode="cover"
                   />
