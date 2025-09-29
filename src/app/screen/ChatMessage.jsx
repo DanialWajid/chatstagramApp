@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+"use client";
+
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -554,7 +556,7 @@ const ChatMessage = () => {
       <View style={dynamicStyles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate("ChatPage")}
+          onPress={() => navigation.navigate("Home")}
         >
           <Text style={[styles.backButtonText, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
