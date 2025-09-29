@@ -95,6 +95,42 @@ export const useAuthStore = create((set) => ({
       throw error;
     }
   },
+  verifyTwoFactor: async (code, userId) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await axios.post(`${API_URL}/verify-2fa`, {
+        token: code,
+        userId,
+        tempToken: localStorage.getItem("pendingAuthToken"), // if you have one
+      });
+
+      const token = response.data.token;
+      const user = response.data.user;
+
+      localStorage.removeItem("pendingUserId");
+      localStorage.removeItem("pendingAuthToken");
+
+      storeToken(token);
+      localStorage.setItem("userInfo", JSON.stringify({ user }));
+
+      set({
+        user,
+        token,
+        isAuthenticated: true,
+        isLoading: false,
+        twoFactorRequired: false,
+      });
+
+      // Return success to trigger navigation
+      return { success: true };
+    } catch (error) {
+      set({
+        error: error.response?.data?.message || "Invalid verification code",
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
   verifyEmail: async (code) => {
     set({ isLoading: true, error: null });
 

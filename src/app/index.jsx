@@ -17,6 +17,7 @@ import { useAuthStore } from "../store/authStore";
 import { ThemeProvider } from "../store/themeContext";
 import * as Font from "expo-font";
 import { ActivityIndicator, View } from "react-native";
+import TwoFactorAuthScreen from "./screen/TwoFactor";
 
 const Stack = createNativeStackNavigator();
 
@@ -59,6 +60,7 @@ const AppContent = () => {
       <Stack.Screen name="ChatMessage" component={ChatMessage} />
       <Stack.Screen name="CreateGroupChat" component={CreateGroupChat} />
       <Stack.Screen name="GroupChatSettings" component={GroupChatSettings} />
+      <Stack.Screen name="TwoFactor" component={TwoFactorAuthScreen} />
       <Stack.Screen
         name="Profile"
         component={Profile}

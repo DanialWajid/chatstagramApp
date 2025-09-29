@@ -24,6 +24,38 @@ export const updateProfile = async (formData, id) => {
     throw error;
   }
 };
+export const verifyTwoFactor = async (code, userId) => {
+  set({ isLoading: true, error: null });
+  try {
+    const response = await axios.post(`${API_URL}/verify-2fa`, {
+      token: code,
+      userId,
+      // if you have one
+    });
+
+    const token = response.data.token;
+    const user = response.data.user;
+
+    storeToken(token);
+
+    set({
+      user,
+      token,
+      isAuthenticated: true,
+      isLoading: false,
+      twoFactorRequired: false,
+    });
+
+    // Return success to trigger navigation
+    return { success: true };
+  } catch (error) {
+    set({
+      error: error.response?.data?.message || "Invalid verification code",
+      isLoading: false,
+    });
+    throw error;
+  }
+};
 
 export const getProfileById = async (id) => {
   try {

@@ -18,12 +18,12 @@ import {
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
-import { User, Send, Users, Settings } from "lucide-react-native";
+import { User, Send, Users, Settings, Bot } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
+import AiPromptBox from "../../components/AiPromptBox";
 
-// Update TypingIndicator component to use theme
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
   const opacity = useRef(new Animated.Value(0)).current;
@@ -92,7 +92,6 @@ const TypingIndicator = ({ typingUsers }) => {
   );
 };
 
-// Update the DateSeparator component to use theme with rounded background
 const DateSeparator = ({ date }) => {
   const { theme } = useTheme();
 
@@ -102,7 +101,6 @@ const DateSeparator = ({ date }) => {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    // Reset time to compare dates only
     const messageDateOnly = new Date(
       messageDate.getFullYear(),
       messageDate.getMonth(),
@@ -155,107 +153,6 @@ const DateSeparator = ({ date }) => {
 };
 
 const ChatMessage = () => {
-  // ... all existing state and logic
-  const { theme } = useTheme();
-
-  // Create dynamic styles inside the component
-  const dynamicStyles = {
-    container: {
-      flex: 1,
-      backgroundColor: theme.background,
-    },
-    loadingContainer: {
-      flex: 1,
-      justifyContent: "center",
-      alignItems: "center",
-      backgroundColor: theme.background,
-    },
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      paddingTop: 50,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.border,
-      backgroundColor: theme.card,
-    },
-    headerAvatarFallback: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.input,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    groupHeaderAvatar: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: theme.cardHighlight || theme.card,
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 1,
-      borderColor: theme.accent,
-    },
-    dateSeparatorLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: theme.border,
-    },
-    dateSeparatorBubble: {
-      backgroundColor: theme.input,
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      borderRadius: 20,
-      marginHorizontal: 12,
-    },
-    myMessage: {
-      alignSelf: "flex-end",
-      backgroundColor: theme.accent,
-      borderBottomRightRadius: 4,
-    },
-    theirMessage: {
-      alignSelf: "flex-start",
-      backgroundColor: theme.input,
-      borderBottomLeftRadius: 4,
-    },
-    typingBubble: {
-      backgroundColor: theme.input,
-      borderRadius: 16,
-      padding: 12,
-      maxWidth: "80%",
-      flexDirection: "row",
-      alignItems: "center",
-    },
-    inputContainer: {
-      flexDirection: "row",
-      alignItems: "flex-end",
-      padding: 16,
-      borderTopWidth: 1,
-      borderTopColor: theme.border,
-      backgroundColor: theme.card,
-    },
-    textInput: {
-      flex: 1,
-      backgroundColor: theme.input,
-      borderRadius: 20,
-      paddingHorizontal: 16,
-      paddingVertical: 12,
-      marginRight: 12,
-      color: theme.inputText,
-      fontSize: 16,
-      maxHeight: 100,
-    },
-    sendButtonActive: {
-      backgroundColor: theme.accent,
-    },
-    sendButtonInactive: {
-      backgroundColor: theme.input,
-    },
-  };
-
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -267,6 +164,8 @@ const ChatMessage = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const flatListRef = useRef(null);
+
+  const [showAiPrompt, setShowAiPrompt] = useState(false);
 
   const { chatId, chatData } = route.params;
   const API_URL = "http://192.168.0.109:8000/api";
@@ -282,7 +181,6 @@ const ChatMessage = () => {
     };
   }, [chatId, user._id]);
 
-  // Function to group messages by date and add date separators
   const groupMessagesByDate = (messages) => {
     const grouped = [];
     let currentDate = null;
@@ -291,7 +189,6 @@ const ChatMessage = () => {
       const messageDate = new Date(message.createdAt).toDateString();
 
       if (currentDate !== messageDate) {
-        // Add date separator
         grouped.push({
           type: "date",
           id: `date-${messageDate}`,
@@ -300,7 +197,6 @@ const ChatMessage = () => {
         currentDate = messageDate;
       }
 
-      // Add the message
       grouped.push({
         type: "message",
         ...message,
@@ -466,6 +362,11 @@ const ChatMessage = () => {
     setTypingTimeout(timeout);
   };
 
+  const handleAiReply = (aiMessage) => {
+    setNewMessage(aiMessage);
+    setShowAiPrompt(false);
+  };
+
   const getChatDisplayInfo = () => {
     if (!chatData) return { name: "Chat", image: null, isGroup: false };
 
@@ -495,18 +396,15 @@ const ChatMessage = () => {
     }
   };
 
-  const renderItem = ({ item }) => {
-    if (item.type === "date") {
-      return <DateSeparator date={item.date} />;
-    }
-
+  const MessageBubble = ({ item }) => {
+    const { theme } = useTheme();
     const isMyMessage = item.sender._id === user._id;
 
     return (
       <View
         style={[
-          styles.messageContainer,
-          isMyMessage ? dynamicStyles.myMessage : dynamicStyles.theirMessage,
+          styles.messageWrapper,
+          isMyMessage ? styles.myMessageWrapper : styles.theirMessageWrapper,
         ]}
       >
         {!isMyMessage && chatData?.isGroupChat && (
@@ -514,15 +412,34 @@ const ChatMessage = () => {
             {item.sender.name}
           </Text>
         )}
-        <Text
+
+        <View
           style={[
-            styles.messageText,
-            isMyMessage ? { color: theme.buttonText } : { color: theme.text },
+            styles.messageBubble,
+            isMyMessage
+              ? [styles.myMessageBubble, { backgroundColor: theme.accent }]
+              : [styles.theirMessageBubble, { backgroundColor: theme.input }],
           ]}
         >
-          {item.content}
-        </Text>
-        <Text style={[styles.timestamp, { color: theme.secondaryText }]}>
+          <Text
+            style={[
+              styles.messageText,
+              isMyMessage
+                ? { color: theme.buttonText || "#FFFFFF" }
+                : { color: theme.text },
+            ]}
+          >
+            {item.content}
+          </Text>
+        </View>
+
+        <Text
+          style={[
+            styles.timestamp,
+            { color: theme.secondaryText },
+            isMyMessage ? styles.myTimestamp : styles.theirTimestamp,
+          ]}
+        >
           {new Date(item.createdAt).toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
@@ -532,14 +449,112 @@ const ChatMessage = () => {
     );
   };
 
+  const renderItem = ({ item }) => {
+    if (item.type === "date") {
+      return <DateSeparator date={item.date} />;
+    }
+
+    return <MessageBubble item={item} />;
+  };
+
   const displayInfo = getChatDisplayInfo();
   const groupedMessages = groupMessagesByDate(messages);
+
+  const { theme } = useTheme();
+
+  const dynamicStyles = {
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: theme.background,
+    },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      paddingTop: 50,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.border,
+      backgroundColor: theme.card,
+    },
+    headerAvatarFallback: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: theme.input,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    groupHeaderAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: theme.cardHighlight || theme.card,
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: theme.accent,
+    },
+    inputContainer: {
+      flexDirection: "row",
+      alignItems: "flex-end",
+      padding: 16,
+      borderTopWidth: 1,
+      borderTopColor: theme.border,
+      backgroundColor: theme.card,
+    },
+    textInput: {
+      flex: 1,
+      backgroundColor: theme.input,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      marginRight: 12,
+      color: theme.inputText,
+      fontSize: 16,
+      maxHeight: 100,
+    },
+    sendButtonActive: {
+      backgroundColor: theme.accent,
+    },
+    sendButtonInactive: {
+      backgroundColor: theme.input,
+    },
+    aiButton: {
+      position: "absolute",
+      bottom: 80,
+      right: 16,
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: theme.accent,
+      alignItems: "center",
+      justifyContent: "center",
+      shadowColor: "#000",
+      shadowOffset: {
+        width: 0,
+        height: 2,
+      },
+      shadowOpacity: 0.25,
+      shadowRadius: 3.84,
+      elevation: 5,
+    },
+  };
 
   if (loading) {
     return (
       <View style={dynamicStyles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.accent} />
-        <Text style={[styles.loadingText, { color: theme.secondaryText }]}>
+        <Text
+          style={{ marginTop: 16, fontSize: 16, color: theme.secondaryText }}
+        >
           Loading messages...
         </Text>
       </View>
@@ -552,13 +567,14 @@ const ChatMessage = () => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
-      {/* Header */}
       <View style={dynamicStyles.header}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.navigate("Home")}
         >
-          <Text style={[styles.backButtonText, { color: theme.text }]}>←</Text>
+          <Text style={{ fontSize: 24, fontWeight: "bold", color: theme.text }}>
+            ←
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -580,21 +596,35 @@ const ChatMessage = () => {
             </View>
           )}
           <View style={styles.headerTextContainer}>
-            <Text style={[styles.headerUserName, { color: theme.text }]}>
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "600",
+                textAlign: "center",
+                color: theme.text,
+              }}
+            >
               {displayInfo.name}
               {displayInfo.isGroup && (
                 <Text
-                  style={[
-                    styles.memberCountHeader,
-                    { color: theme.secondaryText },
-                  ]}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "normal",
+                    color: theme.secondaryText,
+                  }}
                 >
                   {" "}
                   ({displayInfo.memberCount})
                 </Text>
               )}
             </Text>
-            {socketConnected && <Text style={styles.onlineStatus}>Online</Text>}
+            {socketConnected && (
+              <Text
+                style={{ fontSize: 12, color: "#10b981", textAlign: "center" }}
+              >
+                Online
+              </Text>
+            )}
           </View>
         </TouchableOpacity>
 
@@ -616,7 +646,6 @@ const ChatMessage = () => {
         </View>
       </View>
 
-      {/* Messages */}
       <FlatList
         ref={flatListRef}
         data={groupedMessages}
@@ -633,7 +662,13 @@ const ChatMessage = () => {
         }}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+            <Text
+              style={{
+                fontSize: 16,
+                textAlign: "center",
+                color: theme.secondaryText,
+              }}
+            >
               {displayInfo.isGroup
                 ? "Welcome to the group! Start the conversation!"
                 : "No messages yet. Start the conversation!"}
@@ -643,7 +678,19 @@ const ChatMessage = () => {
         ListFooterComponent={<TypingIndicator typingUsers={typingUsers} />}
       />
 
-      {/* Input */}
+      <TouchableOpacity
+        style={dynamicStyles.aiButton}
+        onPress={() => setShowAiPrompt(true)}
+      >
+        <Bot size={24} color={theme.buttonText} />
+      </TouchableOpacity>
+
+      <AiPromptBox
+        visible={showAiPrompt}
+        onClose={() => setShowAiPrompt(false)}
+        onAiReply={handleAiReply}
+      />
+
       <View style={dynamicStyles.inputContainer}>
         <TextInput
           style={dynamicStyles.textInput}
@@ -688,19 +735,10 @@ const ChatMessage = () => {
   );
 };
 
-// Remove all theme references from StyleSheet.create()
 const styles = StyleSheet.create({
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-  },
   backButton: {
     padding: 8,
     width: 40,
-  },
-  backButtonText: {
-    fontSize: 24,
-    fontWeight: "bold",
   },
   headerUserInfo: {
     flexDirection: "row",
@@ -717,20 +755,6 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-  },
-  headerUserName: {
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  memberCountHeader: {
-    fontSize: 14,
-    fontWeight: "normal",
-  },
-  onlineStatus: {
-    fontSize: 12,
-    color: "#10b981",
-    textAlign: "center",
   },
   headerActions: {
     flexDirection: "row",
@@ -758,7 +782,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginVertical: 16,
-    paddingHorizontal: 16,
+  },
+  dateSeparatorLine: {
+    flex: 1,
+    height: 1,
   },
   dateSeparatorBubble: {
     paddingHorizontal: 16,
@@ -771,25 +798,57 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     textAlign: "center",
   },
-  messageContainer: {
-    maxWidth: "80%",
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  // Message styling
+  messageWrapper: {
     marginVertical: 4,
-    padding: 12,
-    borderRadius: 16,
+    maxWidth: "80%",
+  },
+  myMessageWrapper: {
+    alignSelf: "flex-end",
+    alignItems: "flex-end",
+  },
+  theirMessageWrapper: {
+    alignSelf: "flex-start",
+    alignItems: "flex-start",
+  },
+  messageBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    marginBottom: 4,
+  },
+  myMessageBubble: {
+    borderBottomRightRadius: 4,
+  },
+  theirMessageBubble: {
+    borderBottomLeftRadius: 4,
   },
   senderName: {
     fontSize: 12,
-    marginBottom: 4,
     fontWeight: "500",
+    marginBottom: 4,
+    marginLeft: 12,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 20,
   },
   timestamp: {
-    fontSize: 12,
-    marginTop: 4,
-    alignSelf: "flex-end",
+    fontSize: 11,
+    marginHorizontal: 12,
+  },
+  myTimestamp: {
+    textAlign: "right",
+  },
+  theirTimestamp: {
+    textAlign: "left",
   },
   emptyContainer: {
     flex: 1,
@@ -797,13 +856,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingTop: 100,
   },
-  emptyText: {
-    fontSize: 16,
-    textAlign: "center",
-  },
+  // Typing indicator
   typingContainer: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  typingBubble: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
   },
   typingText: {
     fontSize: 14,
@@ -826,13 +890,6 @@ const styles = StyleSheet.create({
   },
   dot3: {
     opacity: 1,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
   },
 });
 
