@@ -30,15 +30,23 @@ import {
   Paperclip,
   File as ImageIcon,
   Download,
+  Phone,
 } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
 import AiPromptBox from "../../components/AiPromptBox";
-import * as FileSystem from "expo-file-system/legacy";
+import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { WebView } from "react-native-webview";
 import * as WebBrowser from "expo-web-browser"; // add WebBrowser for in-app fallback
+import RtcEngine, {
+  ChannelProfile,
+  ClientRole,
+  AudioProfile,
+  AudioScenario,
+} from "react-native-agora";
+import { Audio } from "expo-av";
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -196,6 +204,12 @@ const ChatMessage = () => {
   const [downloadingId, setDownloadingId] = useState(null);
   const [downloadedMap, setDownloadedMap] = useState({});
   const [docWebError, setDocWebError] = useState(false); // add docWebError state for WebView error tracking
+  const [calling, setCalling] = useState(false);
+  const [inCall, setInCall] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(false);
+  const [remoteUid, setRemoteUid] = useState(null);
+  const engineRef = useRef(null);
 
   const { user } = useAuthStore();
   const navigation = useNavigation();
@@ -206,6 +220,10 @@ const ChatMessage = () => {
 
   const { chatId, chatData } = route.params;
   const API_URL = "http://192.168.0.109:8000/api";
+  const CALL_URL = API_URL.replace("/api", "/call");
+  const AGORA_APP_ID =
+    process.env.EXPO_PUBLIC_AGORA_APP_ID ||
+    process.env.NEXT_PUBLIC_AGORA_APP_ID;
 
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);
@@ -215,6 +233,7 @@ const ChatMessage = () => {
     return () => {
       console.log("ChatMessage component unmounting");
       cleanupSocket();
+      endVoiceCall(); // Ensure call is ended on unmount
     };
   }, [chatId, user._id]);
 
@@ -1057,6 +1076,124 @@ const ChatMessage = () => {
     },
   };
 
+  // voice call helpers
+  const requestMicPermission = async () => {
+    const { status } = await Audio.requestPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Microphone Required",
+        "Please enable microphone access to place a call."
+      );
+      return false;
+    }
+    return true;
+  };
+
+  const startVoiceCall = async () => {
+    try {
+      if (!AGORA_APP_ID) {
+        Alert.alert(
+          "Missing config",
+          "AGORA_APP_ID is not set. Please set EXPO_PUBLIC_AGORA_APP_ID or NEXT_PUBLIC_AGORA_APP_ID."
+        );
+        return;
+      }
+      const micOk = await requestMicPermission();
+      if (!micOk) return;
+
+      setCalling(true);
+
+      // Fetch token from backend
+      const { data } = await axios.post(`${CALL_URL}/token`, {
+        channelName: String(chatId),
+        uid: 0, // let Agora assign a uid; token generator supports uid||0
+      });
+      const token = data?.token;
+      if (!token) {
+        setCalling(false);
+        Alert.alert("Token Error", "Failed to get Agora token.");
+        return;
+      }
+
+      // Create and configure engine
+      const engine = await RtcEngine.create(AGORA_APP_ID);
+      engineRef.current = engine;
+      await engine.setChannelProfile(ChannelProfile.LiveBroadcasting);
+      await engine.setClientRole(ClientRole.Broadcaster);
+      await engine.setAudioProfile(
+        AudioProfile.Default,
+        AudioScenario.Communication
+      );
+      await engine.enableAudio();
+
+      // Event listeners
+      engine.addListener("JoinChannelSuccess", (_channel, _uid, _elapsed) => {
+        setInCall(true);
+      });
+      engine.addListener("UserJoined", (uid) => {
+        setRemoteUid(uid);
+      });
+      engine.addListener("UserOffline", (uid) => {
+        if (remoteUid === uid) setRemoteUid(null);
+      });
+      engine.addListener("Error", (err) => {
+        console.log("[v0] Agora Error:", err);
+        Alert.alert("Call Error", "An error occurred in the call.");
+      });
+
+      // Join channel
+      await engine.joinChannel(token, String(chatId), null, 0);
+    } catch (e) {
+      console.log("[v0] startVoiceCall error:", e?.message);
+      Alert.alert("Call Failed", "Unable to start the call.");
+      setCalling(false);
+    }
+  };
+
+  const endVoiceCall = async () => {
+    try {
+      const engine = engineRef.current;
+      if (engine) {
+        await engine.leaveChannel();
+        engine.removeAllListeners();
+        await engine.destroy();
+        engineRef.current = null;
+      }
+    } catch (e) {
+      console.log("[v0] endVoiceCall error:", e?.message);
+    } finally {
+      setIsMuted(false);
+      setSpeakerOn(false);
+      setRemoteUid(null);
+      setInCall(false);
+      setCalling(false);
+    }
+  };
+
+  const toggleMute = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const next = !isMuted;
+      await engine.muteLocalAudioStream(next);
+      setIsMuted(next);
+    } catch (e) {
+      console.log("[v0] toggleMute error:", e?.message);
+    }
+  };
+
+  const toggleSpeaker = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const next = !speakerOn;
+      await engine.setEnableSpeakerphone(next);
+      setSpeakerOn(next);
+    } catch (e) {
+      console.log("[v0] toggleSpeaker error:", e?.message);
+    }
+  };
+
   if (loading) {
     return (
       <View style={dynamicStyles.loadingContainer}>
@@ -1146,6 +1283,18 @@ const ChatMessage = () => {
               <Settings size={20} color={theme.secondaryText} />
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={startVoiceCall}
+            disabled={calling || inCall}
+          >
+            <Phone
+              size={20}
+              color={
+                calling || inCall ? theme.secondaryText : theme.secondaryText
+              }
+            />
+          </TouchableOpacity>
           <View
             style={[
               styles.connectionDot,
@@ -1484,6 +1633,81 @@ const ChatMessage = () => {
                     Download
                   </Text>
                 )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={calling || inCall}
+        transparent
+        animationType="fade"
+        onRequestClose={endVoiceCall}
+      >
+        <View style={styles.callModalBackdrop}>
+          <View
+            style={[
+              styles.callModal,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            <Text style={[styles.callTitle, { color: theme.text }]}>
+              {inCall ? "In Call" : "Calling..."}
+            </Text>
+            <Text
+              style={[styles.callSubtitle, { color: theme.secondaryText }]}
+              numberOfLines={1}
+            >
+              {displayInfo?.name}
+            </Text>
+
+            <View style={styles.callStatusRow}>
+              <View
+                style={[
+                  styles.callStatusDot,
+                  { backgroundColor: inCall ? "#10b981" : "#f59e0b" },
+                ]}
+              />
+              <Text style={{ color: theme.secondaryText }}>
+                {inCall
+                  ? remoteUid
+                    ? `Connected • User ${remoteUid}`
+                    : "Connected"
+                  : "Ringing"}
+              </Text>
+            </View>
+
+            <View style={styles.callControls}>
+              <TouchableOpacity
+                style={[
+                  styles.callControlBtn,
+                  { backgroundColor: isMuted ? theme.input : theme.input },
+                ]}
+                onPress={toggleMute}
+              >
+                <Text style={{ color: theme.text }}>
+                  {isMuted ? "Unmute" : "Mute"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.callControlBtn,
+                  { backgroundColor: theme.input },
+                ]}
+                onPress={toggleSpeaker}
+              >
+                <Text style={{ color: theme.text }}>
+                  {speakerOn ? "Earpiece" : "Speaker"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.callEndBtn, { backgroundColor: "#ef4444" }]}
+                onPress={endVoiceCall}
+              >
+                <Text style={{ color: "#fff" }}>End</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1972,6 +2196,61 @@ const styles = StyleSheet.create({
   docBtnText: {
     fontWeight: "600",
     fontSize: 14,
+  },
+  // Call UI
+  callModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  callModal: {
+    width: "85%",
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+  },
+  callTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  callSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  callStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 16,
+  },
+  callStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  callControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  callControlBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  callEndBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
   },
 });
 
