@@ -3355,6 +3355,11 @@ expo-secure-store@~15.0.7:
   resolved "https://registry.npmjs.org/expo-secure-store/-/expo-secure-store-15.0.7.tgz#f74f928029889b8a32c0eafc2a214abee1e8b71e"
   integrity sha512-9q7+G1Zxr5P6J5NRIlm86KulvmYwc6UnQlYPjQLDu1drDnerz6AT6l884dPu29HgtDTn4rR0heYeeGFhMKM7/Q==
 
+expo-sharing@^14.0.7:
+  version "14.0.7"
+  resolved "https://registry.npmjs.org/expo-sharing/-/expo-sharing-14.0.7.tgz#64845ea569c725a9a32705be7ef772e556134e1c"
+  integrity sha512-t/5tR8ZJNH6tMkHXlF7453UafNIfrpfTG+THN9EMLC4Wsi4bJuESPm3NdmWDg2D4LDALJI/LQo0iEnLAd5Sp4g==
+
 expo-splash-screen@~31.0.10:
   version "31.0.10"
   resolved "https://registry.npmjs.org/expo-splash-screen/-/expo-splash-screen-31.0.10.tgz#e0edd9782715b82a8eed34d5ebde778b79f850b4"

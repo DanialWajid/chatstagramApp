@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Linking,
+  Modal,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as DocumentPicker from "expo-document-picker";
@@ -28,14 +28,17 @@ import {
   Settings,
   Bot,
   Paperclip,
-  File,
-  Image as ImageIcon,
+  File as ImageIcon,
   Download,
 } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
 import AiPromptBox from "../../components/AiPromptBox";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { WebView } from "react-native-webview";
+import * as WebBrowser from "expo-web-browser"; // add WebBrowser for in-app fallback
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -175,6 +178,24 @@ const ChatMessage = () => {
   const [socketConnected, setSocketConnected] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [showFileOptions, setShowFileOptions] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
+
+  const [imagePreview, setImagePreview] = useState({
+    visible: false,
+    url: "",
+    fromMe: false,
+  });
+  const [docPreview, setDocPreview] = useState({
+    visible: false,
+    url: "",
+    name: "",
+    type: "",
+    fromMe: false,
+  });
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [downloadedMap, setDownloadedMap] = useState({});
+  const [docWebError, setDocWebError] = useState(false); // add docWebError state for WebView error tracking
 
   const { user } = useAuthStore();
   const navigation = useNavigation();
@@ -311,6 +332,114 @@ const ChatMessage = () => {
     }
   };
 
+  const getMessageKey = (item) =>
+    item?._id ||
+    item?.fileUrl ||
+    item?.fileName ||
+    String(item?.createdAt || "");
+
+  const getLocalTargetForItem = (item) => {
+    if (!item?.fileUrl && !item?.fileName) return null;
+    const isImage = (t) => t && t.startsWith("image/");
+    const fromUrl = item?.fileUrl?.split("/")?.pop() || "";
+    const baseName =
+      item?.fileName ||
+      fromUrl ||
+      (isImage(item?.fileType)
+        ? `image_${item?._id || Date.now()}.jpg`
+        : `file_${item?._id || Date.now()}`);
+    const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(baseName);
+    const extFromType = item?.fileType?.split("/")[1] || (hasExt ? "" : "bin");
+    const safeName = hasExt
+      ? baseName
+      : `${baseName}${extFromType ? `.${extFromType}` : ""}`;
+    return FileSystem.documentDirectory + safeName;
+  };
+
+  const getDocPreviewUrl = (url, type) => {
+    try {
+      const lower = (type || "").toLowerCase();
+      if (lower.includes("pdf")) return url;
+
+      const cleanUrl = (url || "").split("#")[0].split("?")[0];
+      const ext = cleanUrl.includes(".")
+        ? cleanUrl.split(".").pop().toLowerCase()
+        : "";
+
+      const officeExts = [
+        "doc",
+        "docx",
+        "xls",
+        "xlsx",
+        "ppt",
+        "pptx",
+        "pps",
+        "ppsx",
+        "csv",
+      ];
+      const isOfficeByExt = officeExts.includes(ext);
+      const isOfficeByMime =
+        lower.includes("msword") ||
+        lower.includes("excel") ||
+        lower.includes("powerpoint") ||
+        lower.includes("officedocument");
+
+      if (isOfficeByExt || isOfficeByMime) {
+        return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(
+          url
+        )}`;
+      }
+
+      // Default to Google Docs Viewer
+      return `https://docs.google.com/viewer?embedded=1&url=${encodeURIComponent(
+        url
+      )}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const getDisplayFileName = (item) => {
+    if (item?.fileName && typeof item.fileName === "string")
+      return item.fileName;
+    const url = item?.fileUrl || "";
+    try {
+      const last = url.split("/").pop() || "";
+      return decodeURIComponent(last) || "Document";
+    } catch {
+      return "Document";
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const updates = {};
+      const fileMessages = messages.filter(
+        (m) => m?.type === "file" && m?.fileUrl
+      );
+      await Promise.all(
+        fileMessages.map(async (m) => {
+          const key = getMessageKey(m);
+          const target = getLocalTargetForItem(m);
+          if (!target) return;
+          try {
+            const info = await FileSystem.getInfoAsync(target);
+            updates[key] = { exists: !!info.exists, uri: target };
+          } catch {
+            updates[key] = { exists: false, uri: target };
+          }
+        })
+      );
+      if (!cancelled && Object.keys(updates).length) {
+        setDownloadedMap((prev) => ({ ...prev, ...updates }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
+
   const sendMessage = async () => {
     if ((!newMessage.trim() && !selectedFile) || sending) return;
 
@@ -426,6 +555,16 @@ const ChatMessage = () => {
 
   const selectImageFromGallery = async () => {
     try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Media library permission is needed to pick images."
+        );
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -433,18 +572,23 @@ const ChatMessage = () => {
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets[0]) {
+      if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
+        // derive a stable filename if fileName is missing
+        const last = asset.uri.split("/").pop() || `image_${Date.now()}`;
+        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
+        const name = asset.fileName || (hasExt ? last : `${last}.jpg`);
+
         setSelectedFile({
           uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
-          type: asset.type || "image/jpeg",
+          name,
+          type: asset.type?.startsWith("image") ? "image/jpeg" : "image/jpeg",
           size: asset.fileSize || 0,
         });
         setShowFileOptions(false);
       }
     } catch (error) {
-      console.error("Error selecting image:", error);
+      console.error("[v0] Error selecting image:", error);
       Alert.alert("Error", "Failed to select image");
     }
   };
@@ -454,9 +598,10 @@ const ChatMessage = () => {
       const result = await DocumentPicker.getDocumentAsync({
         type: "*/*",
         copyToCacheDirectory: true,
+        multiple: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
+      if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
         if (asset.size > 10 * 1024 * 1024) {
           Alert.alert("Error", "File size must be less than 10MB");
@@ -465,14 +610,14 @@ const ChatMessage = () => {
 
         setSelectedFile({
           uri: asset.uri,
-          name: asset.name,
+          name: asset.name || `file_${Date.now()}`,
           type: asset.mimeType || "application/octet-stream",
-          size: asset.size,
+          size: asset.size ?? 0,
         });
         setShowFileOptions(false);
       }
     } catch (error) {
-      console.error("Error selecting document:", error);
+      console.error("[v0] Error selecting document:", error);
       Alert.alert("Error", "Failed to select document");
     }
   };
@@ -481,26 +626,90 @@ const ChatMessage = () => {
     setSelectedFile(null);
   };
 
+  const downloadFile = async (fileUrl, messageId) => {
+    try {
+      setDownloadingId(messageId);
+      const result = await FileSystem.downloadAsync(
+        fileUrl,
+        FileSystem.documentDirectory + fileUrl.split("/").pop()
+      );
+      console.log("Downloaded file to:", result.uri);
+      await Sharing.shareAsync(result.uri);
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      Alert.alert("Error", "Failed to download file");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
   const MessageBubble = ({ item }) => {
     const { theme } = useTheme();
     const isMyMessage = item.sender._id === user._id;
     const isFileMessage = item.type === "file" && item.fileUrl;
+    const msgKey = getMessageKey(item);
+    const localInfo = downloadedMap[msgKey];
 
-    const openFile = async () => {
-      if (item.fileUrl) {
-        try {
-          const fileUrl = item.fileUrl; // Cloudinary URLs are already complete
+    const openPreview = () => {
+      if (!item.fileUrl) return;
+      if (isImage(item.fileType)) {
+        setImagePreview({
+          visible: true,
+          url: item.fileUrl,
+          fromMe: isMyMessage,
+        });
+      } else {
+        setDocWebError(false); // reset error before showing doc preview
+        setDocPreview({
+          visible: true,
+          url: item.fileUrl,
+          name: getDisplayFileName(item),
+          type: item.fileType || "application/octet-stream",
+          fromMe: isMyMessage,
+        });
+      }
+    };
 
-          const supported = await Linking.canOpenURL(fileUrl);
-          if (supported) {
-            await Linking.openURL(fileUrl);
-          } else {
-            Alert.alert("Error", "Cannot open this file type");
-          }
-        } catch (error) {
-          console.error("Error opening file:", error);
-          Alert.alert("Error", "Failed to open file");
+    const downloadCurrent = async () => {
+      try {
+        const url = item.fileUrl;
+        const target = getLocalTargetForItem(item);
+
+        setDownloadingId(item._id || msgKey);
+        const { uri } = await FileSystem.downloadAsync(url, target);
+        setDownloadedMap((prev) => ({
+          ...prev,
+          [msgKey]: { exists: true, uri },
+        }));
+
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri);
+        } else {
+          Alert.alert("Downloaded", `Saved to app documents`);
         }
+      } catch (err) {
+        console.error("Download error:", err);
+        Alert.alert("Error", "Failed to download file");
+      } finally {
+        setDownloadingId(null);
+      }
+    };
+
+    const openLocal = async () => {
+      const uri = localInfo?.uri;
+      if (!uri) {
+        Alert.alert("Not found", "File is not available locally yet.");
+        return;
+      }
+      try {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri);
+        } else {
+          Alert.alert("Saved", `File available at: ${uri}`);
+        }
+      } catch (e) {
+        console.error("Open local error:", e);
+        Alert.alert("Error", "Failed to open local file");
       }
     };
 
@@ -540,7 +749,11 @@ const ChatMessage = () => {
           ]}
         >
           {isFileMessage ? (
-            <TouchableOpacity onPress={openFile} style={styles.fileContainer}>
+            <TouchableOpacity
+              onPress={openPreview}
+              style={styles.fileContainer}
+              activeOpacity={0.9}
+            >
               {isImage(item.fileType) ? (
                 <View>
                   <Image
@@ -548,6 +761,8 @@ const ChatMessage = () => {
                     style={styles.imageMessage}
                     resizeMode="cover"
                   />
+                  {/* Removed filename display for images */}
+
                   {item.content && (
                     <Text
                       style={[
@@ -561,11 +776,67 @@ const ChatMessage = () => {
                       {item.content}
                     </Text>
                   )}
+                  <View style={styles.inlineActions}>
+                    {localInfo?.exists ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineActionBtn,
+                          {
+                            backgroundColor: isMyMessage
+                              ? "rgba(255,255,255,0.2)"
+                              : "#00000020",
+                          },
+                        ]}
+                        onPress={openLocal}
+                      >
+                        <Text
+                          style={[
+                            styles.inlineActionText,
+                            { color: isMyMessage ? "#fff" : "#000" },
+                          ]}
+                        >
+                          Open
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineActionBtn,
+                          {
+                            backgroundColor: isMyMessage
+                              ? "rgba(255,255,255,0.2)"
+                              : "#00000020",
+                          },
+                        ]}
+                        onPress={downloadCurrent}
+                      >
+                        {downloadingId === (item._id || msgKey) ? (
+                          <ActivityIndicator
+                            size={14}
+                            color={isMyMessage ? "#fff" : "#000"}
+                          />
+                        ) : (
+                          <Download
+                            size={16}
+                            color={isMyMessage ? "#fff" : "#000"}
+                          />
+                        )}
+                        <Text
+                          style={[
+                            styles.inlineActionText,
+                            { color: isMyMessage ? "#fff" : "#000" },
+                          ]}
+                        >
+                          Download
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               ) : (
                 <View style={styles.documentContainer}>
                   <View style={styles.documentIcon}>
-                    <File size={24} color={theme.accent} />
+                    <ImageIcon size={20} color={theme.accent} />
                   </View>
                   <View style={styles.documentInfo}>
                     <Text
@@ -577,7 +848,7 @@ const ChatMessage = () => {
                       ]}
                       numberOfLines={1}
                     >
-                      {item.fileName || "Document"}
+                      {getDisplayFileName(item)}
                     </Text>
                     <Text
                       style={[
@@ -593,14 +864,53 @@ const ChatMessage = () => {
                       {formatFileSize(item.fileSize || 0)}
                     </Text>
                   </View>
-                  <Download
-                    size={20}
-                    color={
-                      isMyMessage
-                        ? theme.buttonText || "#FFFFFF"
-                        : theme.secondaryText
-                    }
-                  />
+                  <View style={styles.docActions}>
+                    <TouchableOpacity
+                      onPress={openPreview}
+                      style={styles.docActionBtn}
+                    >
+                      <Text
+                        style={[
+                          styles.docActionText,
+                          { color: isMyMessage ? "#fff" : theme.text },
+                        ]}
+                      >
+                        Preview
+                      </Text>
+                    </TouchableOpacity>
+                    {localInfo?.exists ? (
+                      <TouchableOpacity
+                        onPress={openLocal}
+                        style={styles.docActionBtn}
+                      >
+                        <Text
+                          style={[
+                            styles.docActionText,
+                            { color: isMyMessage ? "#fff" : theme.text },
+                          ]}
+                        >
+                          Open
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={downloadCurrent}
+                        style={styles.docActionBtn}
+                      >
+                        {downloadingId === (item._id || msgKey) ? (
+                          <ActivityIndicator
+                            size={14}
+                            color={isMyMessage ? "#fff" : theme.text}
+                          />
+                        ) : (
+                          <Download
+                            size={20}
+                            color={isMyMessage ? "#fff" : theme.text}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               )}
 
@@ -890,7 +1200,12 @@ const ChatMessage = () => {
         onAiReply={handleAiReply}
       />
 
-      {showFileOptions && (
+      <Modal
+        visible={showFileOptions}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFileOptions(false)}
+      >
         <View style={styles.fileOptionsOverlay}>
           <TouchableOpacity
             style={styles.fileOptionsBackdrop}
@@ -899,30 +1214,281 @@ const ChatMessage = () => {
           <View
             style={[
               styles.fileOptionsContainer,
-              { backgroundColor: theme.card },
+              { backgroundColor: theme.card, borderTopColor: theme.border },
             ]}
           >
             <TouchableOpacity
               style={[styles.fileOption, { borderBottomColor: theme.border }]}
               onPress={selectImageFromGallery}
             >
-              <ImageIcon size={24} color={theme.accent} />
+              <ImageIcon size={20} color={theme.accent} />
               <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Select Image
+                Choose Image
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.fileOption}
+              style={[styles.fileOption, { borderBottomColor: theme.border }]}
               onPress={selectDocument}
             >
-              <File size={24} color={theme.accent} />
+              <Paperclip size={20} color={theme.accent} />
               <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Select Document
+                Choose Document
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setShowFileOptions(false)}
+              style={{ paddingVertical: 16, alignItems: "center" }}
+            >
+              <Text style={{ color: theme.secondaryText, fontWeight: "600" }}>
+                Cancel
               </Text>
             </TouchableOpacity>
           </View>
         </View>
-      )}
+      </Modal>
+
+      <Modal
+        visible={imagePreview.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setImagePreview({ visible: false, url: "", fromMe: false })
+        }
+      >
+        <View style={styles.previewBackdrop}>
+          <View style={styles.previewContent}>
+            <Image
+              source={{ uri: imagePreview.url }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={[styles.previewBtn, { backgroundColor: "#00000050" }]}
+                onPress={() =>
+                  setImagePreview({ visible: false, url: "", fromMe: false })
+                }
+              >
+                <Text style={styles.previewBtnText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.previewBtn, { backgroundColor: "#00000080" }]}
+                onPress={async () => {
+                  try {
+                    setDownloadingId("image-preview");
+                    const msg = messages.find(
+                      (m) => m?.fileUrl === imagePreview.url
+                    );
+                    let target;
+                    let key;
+                    if (msg) {
+                      target = getLocalTargetForItem(msg);
+                      key = getMessageKey(msg);
+                    } else {
+                      const filename = `image_${Date.now()}.jpg`;
+                      target = FileSystem.documentDirectory + filename;
+                    }
+                    const { uri } = await FileSystem.downloadAsync(
+                      imagePreview.url,
+                      target
+                    );
+                    if (key) {
+                      setDownloadedMap((prev) => ({
+                        ...prev,
+                        [key]: { exists: true, uri },
+                      }));
+                    }
+                    if (await Sharing.isAvailableAsync()) {
+                      await Sharing.shareAsync(uri);
+                    } else {
+                      Alert.alert("Downloaded", "Saved to app documents");
+                    }
+                  } catch (e) {
+                    console.error("[v0] image preview download error:", e);
+                    Alert.alert("Error", "Failed to download image");
+                  } finally {
+                    setDownloadingId(null);
+                  }
+                }}
+              >
+                {downloadingId === "image-preview" ? (
+                  <ActivityIndicator size={16} color="#fff" />
+                ) : (
+                  <Text style={styles.previewBtnText}>Download</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={docPreview.visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setDocPreview({
+            visible: false,
+            url: "",
+            name: "",
+            type: "",
+            fromMe: false,
+          });
+          setDocWebError(false);
+        }}
+      >
+        <View style={styles.docModalBackdrop}>
+          <View style={styles.docModalCard}>
+            <View style={styles.docHeader}>
+              <ImageIcon size={20} color="#3b82f6" />
+              <Text style={styles.docTitle} numberOfLines={1}>
+                {docPreview.name}
+              </Text>
+            </View>
+            <View style={styles.docBody}>
+              <View style={{ height: 420 }}>
+                {docWebError ? (
+                  <View
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <Text style={{ color: "#6b7280", textAlign: "center" }}>
+                      We couldn’t display this file in the viewer.
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() =>
+                        WebBrowser.openBrowserAsync(docPreview.url)
+                      }
+                      style={{
+                        backgroundColor: "#3b82f6",
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "600" }}>
+                        Open in Viewer
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <WebView
+                    source={{
+                      uri: getDocPreviewUrl(docPreview.url, docPreview.type),
+                    }}
+                    style={{ flex: 1, borderRadius: 8 }}
+                    originWhitelist={["*"]}
+                    javaScriptEnabled
+                    domStorageEnabled
+                    allowFileAccess
+                    allowUniversalAccessFromFileURLs
+                    mixedContentMode="always" // Android: allow https<->http assets if any
+                    startInLoadingState
+                    renderLoading={() => (
+                      <View
+                        style={{
+                          flex: 1,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <ActivityIndicator size="small" />
+                      </View>
+                    )}
+                    onLoadStart={() => setDocWebError(false)}
+                    onError={(e) => {
+                      console.log("[v0] WebView onError:", e?.nativeEvent);
+                      setDocWebError(true);
+                    }}
+                    onHttpError={(e) => {
+                      console.log("[v0] WebView onHttpError:", e?.nativeEvent);
+                      setDocWebError(true);
+                    }}
+                  />
+                )}
+              </View>
+            </View>
+            <View style={styles.docFooter}>
+              <TouchableOpacity
+                style={[styles.docBtn, { backgroundColor: "#e5e7eb" }]}
+                onPress={() => {
+                  setDocPreview({
+                    visible: false,
+                    url: "",
+                    name: "",
+                    type: "",
+                    fromMe: false,
+                  });
+                  setDocWebError(false);
+                }}
+              >
+                <Text style={[styles.docBtnText, { color: "#111827" }]}>
+                  Close
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.docBtn, { backgroundColor: "#3b82f6" }]}
+                onPress={async () => {
+                  try {
+                    setDownloadingId("doc-preview");
+                    const msg = messages.find(
+                      (m) => m?.fileUrl === docPreview.url
+                    );
+                    let target;
+                    let key;
+                    if (msg) {
+                      target = getLocalTargetForItem(msg);
+                      key = getMessageKey(msg);
+                    } else {
+                      const extension = docPreview.type?.split("/")[1] || "bin";
+                      const filename = /\.[a-zA-Z0-9]{2,5}$/.test(
+                        docPreview.name
+                      )
+                        ? docPreview.name
+                        : `${
+                            docPreview.name || `file_${Date.now()}`
+                          }.${extension}`;
+                      target = FileSystem.documentDirectory + filename;
+                    }
+                    const { uri } = await FileSystem.downloadAsync(
+                      docPreview.url,
+                      target
+                    );
+                    if (key) {
+                      setDownloadedMap((prev) => ({
+                        ...prev,
+                        [key]: { exists: true, uri },
+                      }));
+                    }
+                    if (await Sharing.isAvailableAsync()) {
+                      await Sharing.shareAsync(uri);
+                    } else {
+                      Alert.alert("Downloaded", `Saved to: ${uri}`);
+                    }
+                  } catch (e) {
+                    console.error("[v0] doc preview download error:", e);
+                    Alert.alert("Error", "Failed to download file");
+                  } finally {
+                    setDownloadingId(null);
+                  }
+                }}
+              >
+                {downloadingId === "doc-preview" ? (
+                  <ActivityIndicator size={16} color="#fff" />
+                ) : (
+                  <Text style={[styles.docBtnText, { color: "#fff" }]}>
+                    Download
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {selectedFile && (
         <View
@@ -936,7 +1502,7 @@ const ChatMessage = () => {
               {selectedFile.type.startsWith("image/") ? (
                 <ImageIcon size={20} color={theme.accent} />
               ) : (
-                <File size={20} color={theme.accent} />
+                <ImageIcon size={20} color={theme.accent} />
               )}
             </View>
             <View style={styles.selectedFileInfo}>
@@ -1250,6 +1816,7 @@ const styles = StyleSheet.create({
   },
   fileContainer: {
     minWidth: 200,
+    maxWidth: 280,
   },
   imageMessage: {
     width: 200,
@@ -1261,6 +1828,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 12,
     minWidth: 200,
+    gap: 8,
   },
   documentIcon: {
     width: 40,
@@ -1281,6 +1849,129 @@ const styles = StyleSheet.create({
   documentSize: {
     fontSize: 12,
     marginTop: 2,
+  },
+  docActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    gap: 8,
+  },
+  docActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.08)",
+  },
+  docActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  inlineActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 8,
+  },
+  inlineActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  inlineActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  previewBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  previewContent: {
+    width: "100%",
+    height: "80%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  previewImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+  },
+  previewActions: {
+    position: "absolute",
+    bottom: 12,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+  },
+  previewBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  previewBtnText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  docModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  docModalCard: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  docHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e5e7eb",
+    gap: 8,
+  },
+  docTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+    flex: 1,
+  },
+  docBody: {
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  docHint: {
+    fontSize: 14,
+    color: "#4b5563",
+    textAlign: "center",
+    marginTop: 16,
+  },
+  docFooter: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  docBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  docBtnText: {
+    fontWeight: "600",
+    fontSize: 14,
   },
 });
 
