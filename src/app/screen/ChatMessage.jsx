@@ -40,11 +40,12 @@ import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { WebView } from "react-native-webview";
 import * as WebBrowser from "expo-web-browser"; // add WebBrowser for in-app fallback
-import RtcEngine, {
-  ChannelProfile,
-  ClientRole,
-  AudioProfile,
-  AudioScenario,
+import {
+  createAgoraRtcEngine,
+  ChannelProfileType,
+  ClientRoleType,
+  AudioProfileType,
+  AudioScenarioType,
 } from "react-native-agora";
 import { Audio } from "expo-av";
 
@@ -209,6 +210,7 @@ const ChatMessage = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
   const [remoteUid, setRemoteUid] = useState(null);
+  // replace RtcEngine instance with ref for the new Agora API
   const engineRef = useRef(null);
 
   const { user } = useAuthStore();
@@ -221,9 +223,7 @@ const ChatMessage = () => {
   const { chatId, chatData } = route.params;
   const API_URL = "http://192.168.0.109:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
-  const AGORA_APP_ID =
-    process.env.EXPO_PUBLIC_AGORA_APP_ID ||
-    process.env.NEXT_PUBLIC_AGORA_APP_ID;
+  const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
 
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);
@@ -1106,7 +1106,7 @@ const ChatMessage = () => {
       // Fetch token from backend
       const { data } = await axios.post(`${CALL_URL}/token`, {
         channelName: String(chatId),
-        uid: 0, // let Agora assign a uid; token generator supports uid||0
+        uid: 0, // let Agora assign a uid
       });
       const token = data?.token;
       if (!token) {
@@ -1115,34 +1115,41 @@ const ChatMessage = () => {
         return;
       }
 
-      // Create and configure engine
-      const engine = await RtcEngine.create(AGORA_APP_ID);
+      // Create and configure engine (v4)
+      const engine = createAgoraRtcEngine();
       engineRef.current = engine;
-      await engine.setChannelProfile(ChannelProfile.LiveBroadcasting);
-      await engine.setClientRole(ClientRole.Broadcaster);
-      await engine.setAudioProfile(
-        AudioProfile.Default,
-        AudioScenario.Communication
+      console.log("App ID:", AGORA_APP_ID, "Token:", token, "Channel:", chatId);
+      engine.initialize({
+        appId: AGORA_APP_ID,
+        channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
+      });
+      engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+      engine.setAudioProfile(
+        AudioProfileType.AudioProfileDefault,
+        AudioScenarioType.AudioScenarioCommunication
       );
-      await engine.enableAudio();
 
-      // Event listeners
-      engine.addListener("JoinChannelSuccess", (_channel, _uid, _elapsed) => {
-        setInCall(true);
-      });
-      engine.addListener("UserJoined", (uid) => {
-        setRemoteUid(uid);
-      });
-      engine.addListener("UserOffline", (uid) => {
-        if (remoteUid === uid) setRemoteUid(null);
-      });
-      engine.addListener("Error", (err) => {
-        console.log("[v0] Agora Error:", err);
-        Alert.alert("Call Error", "An error occurred in the call.");
+      // Event handlers
+      engine.registerEventHandler({
+        onJoinChannelSuccess: () => {
+          setInCall(true);
+        },
+        onUserJoined: (uid) => {
+          setRemoteUid(uid);
+        },
+        onUserOffline: (uid) => {
+          if (remoteUid === uid) setRemoteUid(null);
+        },
+        onError: (err) => {
+          console.log("[v0] Agora Error:", err);
+          Alert.alert("Call Error", "An error occurred in the call.");
+        },
       });
 
-      // Join channel
-      await engine.joinChannel(token, String(chatId), null, 0);
+      // Join channel (v4 signature)
+      engine.joinChannel(token, String(chatId), 0, {
+        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
+      });
     } catch (e) {
       console.log("[v0] startVoiceCall error:", e?.message);
       Alert.alert("Call Failed", "Unable to start the call.");
@@ -1155,8 +1162,10 @@ const ChatMessage = () => {
       const engine = engineRef.current;
       if (engine) {
         await engine.leaveChannel();
-        engine.removeAllListeners();
-        await engine.destroy();
+        if (typeof engine.unregisterEventHandler === "function") {
+          engine.unregisterEventHandler();
+        }
+        engine.release(); // v4 cleanup
         engineRef.current = null;
       }
     } catch (e) {
@@ -1175,6 +1184,7 @@ const ChatMessage = () => {
       const engine = engineRef.current;
       if (!engine) return;
       const next = !isMuted;
+      // use muteLocalAudioStream for v4 API
       await engine.muteLocalAudioStream(next);
       setIsMuted(next);
     } catch (e) {
@@ -1187,7 +1197,9 @@ const ChatMessage = () => {
       const engine = engineRef.current;
       if (!engine) return;
       const next = !speakerOn;
-      await engine.setEnableSpeakerphone(next);
+      if (typeof engine.setEnableSpeakerphone === "function") {
+        await engine.setEnableSpeakerphone(next);
+      }
       setSpeakerOn(next);
     } catch (e) {
       console.log("[v0] toggleSpeaker error:", e?.message);
