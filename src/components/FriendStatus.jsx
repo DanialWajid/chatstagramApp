@@ -10,7 +10,7 @@ const FriendProtectedContent = ({ userId, children, fallbackMessage }) => {
   const { user } = useAuthStore();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.109:8000/";
+  const API_URL = "http://192.168.0.104:8000/";
 
   useEffect(() => {
     const checkAccess = async () => {

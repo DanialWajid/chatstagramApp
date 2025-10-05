@@ -221,7 +221,7 @@ const ChatMessage = () => {
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
   const { chatId, chatData } = route.params;
-  const API_URL = "http://192.168.0.109:8000/api";
+  const API_URL = "http://192.168.0.104:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
 
@@ -1118,7 +1118,16 @@ const ChatMessage = () => {
       // Create and configure engine (v4)
       const engine = createAgoraRtcEngine();
       engineRef.current = engine;
-      console.log("App ID:", AGORA_APP_ID, "Token:", token, "Channel:", chatId);
+      console.log(
+        "App ID:",
+        AGORA_APP_ID,
+        "Token:",
+        token,
+        "Channel:",
+        chatId,
+        "channelName:",
+        String(chatId)
+      );
       engine.initialize({
         appId: AGORA_APP_ID,
         channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,

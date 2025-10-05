@@ -139,7 +139,7 @@ const CreatePostForm = ({ navigation }) => {
       }
 
       const response = await axios.post(
-        "http://192.168.0.109:8000/api/posts", // Make sure this matches your backend endpoint
+        "http://192.168.0.104:8000/api/posts", // Make sure this matches your backend endpoint
         formData,
         {
           headers: {
