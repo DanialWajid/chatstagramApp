@@ -451,7 +451,7 @@ const ChatMessage = () => {
           uri,
           name,
           type: "audio/m4a",
-          size: info.size ?? 0,
+          size: info?.size ?? 0,
         };
         setSelectedFile(fileObj);
         return fileObj; // return file object for quick-send
@@ -2259,7 +2259,7 @@ const ChatMessage = () => {
               <ActivityIndicator size={16} color={theme.buttonText} />
             ) : (
               <Send
-                size={40}
+                size={20}
                 color={
                   (newMessage.trim() || selectedFile) && !sending
                     ? theme.buttonText
