@@ -31,12 +31,16 @@ import {
   File as ImageIcon,
   Download,
   Phone,
+  Mic,
+  Play,
+  Pause,
+  StopCircle,
 } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
 import AiPromptBox from "../../components/AiPromptBox";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { WebView } from "react-native-webview";
 import * as WebBrowser from "expo-web-browser"; // add WebBrowser for in-app fallback
@@ -46,6 +50,8 @@ import {
   ClientRoleType,
   AudioProfileType,
   AudioScenarioType,
+  ConnectionStateType,
+  ConnectionChangedReasonType,
 } from "react-native-agora";
 import { Audio } from "expo-av";
 
@@ -177,6 +183,150 @@ const DateSeparator = ({ date }) => {
   );
 };
 
+// lightweight audio message player component per message
+const AudioMessagePlayer = ({ uri, isMyMessage }) => {
+  const { theme } = useTheme();
+  const soundRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const formatMillis = (millis) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const m = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor(totalSeconds % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        try {
+          soundRef.current.unloadAsync();
+        } catch {}
+        soundRef.current = null;
+      }
+    };
+  }, []);
+
+  const ensureLoaded = async () => {
+    if (soundRef.current) return;
+    setIsLoading(true);
+    const s = new Audio.Sound();
+    s.setOnPlaybackStatusUpdate((status) => {
+      if (!status) return;
+      if ("positionMillis" in status && "durationMillis" in status) {
+        setPosition(status.positionMillis || 0);
+        setDuration(status.durationMillis || 0);
+      }
+      if ("isPlaying" in status) {
+        setIsPlaying(status.isPlaying);
+      }
+      if (status.didJustFinish) {
+        setIsPlaying(false);
+        setPosition(status.durationMillis || 0);
+      }
+    });
+    try {
+      await s.loadAsync({ uri }, {}, true);
+    } catch (e) {
+      console.log("[v0] load sound error:", e?.message);
+      Alert.alert("Playback Error", "Unable to load audio.");
+    } finally {
+      setIsLoading(false);
+      soundRef.current = s;
+    }
+  };
+
+  const togglePlay = async () => {
+    await ensureLoaded();
+    if (!soundRef.current) return;
+    const status = await soundRef.current.getStatusAsync();
+    if (status.isPlaying) {
+      await soundRef.current.pauseAsync();
+    } else {
+      await soundRef.current.playAsync();
+    }
+  };
+
+  const pct =
+    duration > 0 ? Math.min(100, (position / Math.max(1, duration)) * 100) : 0;
+
+  return (
+    <View
+      style={[
+        styles.audioPlayerContainer,
+        {
+          backgroundColor: isMyMessage ? "transparent" : theme.input,
+          borderColor: isMyMessage ? "rgba(255,255,255,0.35)" : theme.border,
+        },
+      ]}
+    >
+      <TouchableOpacity
+        onPress={togglePlay}
+        style={[
+          styles.audioPlayButton,
+          {
+            backgroundColor: isMyMessage ? "rgba(0,0,0,0.15)" : theme.card,
+            borderColor: isMyMessage ? "rgba(255,255,255,0.25)" : theme.border,
+          },
+        ]}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator
+            size={14}
+            color={isMyMessage ? "#fff" : theme.text}
+          />
+        ) : isPlaying ? (
+          <Pause size={16} color={isMyMessage ? "#fff" : theme.text} />
+        ) : (
+          <Play size={16} color={isMyMessage ? "#fff" : theme.text} />
+        )}
+      </TouchableOpacity>
+      <View style={styles.audioMeta}>
+        <View
+          style={[
+            styles.audioProgressTrack,
+            {
+              backgroundColor: isMyMessage
+                ? "rgba(255,255,255,0.25)"
+                : theme.border,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.audioProgressFill,
+              {
+                width: `${pct}%`,
+                backgroundColor: isMyMessage ? "#ffffff" : theme.accent,
+              },
+            ]}
+          />
+        </View>
+        <Text
+          style={[
+            styles.audioTimeLabel,
+            {
+              color: isMyMessage
+                ? theme.buttonText || "#fff"
+                : theme.secondaryText,
+            },
+          ]}
+        >
+          {formatMillis(position)} / {formatMillis(duration)}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
 const ChatMessage = () => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
@@ -212,6 +362,137 @@ const ChatMessage = () => {
   const [remoteUid, setRemoteUid] = useState(null);
   // replace RtcEngine instance with ref for the new Agora API
   const engineRef = useRef(null);
+  const agoraHandlerRef = useRef(null);
+  // Changed to useRef<any> | null
+
+  const formatMillis = (millis) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const m = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor(totalSeconds % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${m}:${s}`;
+  };
+
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+
+  const startVoiceRecording = async () => {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (perm.status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Microphone permission is needed to record voice messages."
+        );
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeIOS: 1,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+
+      const rec = new Audio.Recording();
+      await rec.prepareToRecordAsync(
+        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
+      );
+      await rec.startAsync();
+
+      recordingRef.current = rec;
+      setRecordingDuration(0);
+      setIsRecording(true);
+
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = setInterval(async () => {
+        try {
+          const status = await rec.getStatusAsync();
+          if (
+            status?.isRecording &&
+            typeof status.durationMillis === "number"
+          ) {
+            setRecordingDuration(status.durationMillis);
+          }
+        } catch {}
+      }, 250);
+    } catch (e) {
+      console.log("[v0] startVoiceRecording error:", e?.message);
+      Alert.alert("Error", "Failed to start recording");
+      setIsRecording(false);
+    }
+  };
+
+  const stopVoiceRecording = async () => {
+    try {
+      const rec = recordingRef.current;
+      if (!rec) return null;
+
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      recordingRef.current = null;
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      setIsRecording(false);
+
+      if (uri) {
+        // get file size and set as selected file to reuse existing send flow
+        const info = await FileSystem.getInfoAsync(uri);
+        const name = `voice_${Date.now()}.m4a`;
+        const fileObj = {
+          uri,
+          name,
+          type: "audio/m4a",
+          size: info.size ?? 0,
+        };
+        setSelectedFile(fileObj);
+        return fileObj; // return file object for quick-send
+      }
+      return null;
+    } catch (e) {
+      console.log("[v0] stopVoiceRecording error:", e?.message);
+      setIsRecording(false);
+      return null;
+    } finally {
+      try {
+        await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      } catch {}
+    }
+  };
+
+  const stopAndSendVoiceRecording = async () => {
+    const fileObj = await stopVoiceRecording();
+    if (fileObj && fileObj.uri) {
+      // send immediately with the recorded audio file
+      await sendMessage(fileObj);
+    }
+  };
+
+  const cancelVoiceRecording = async () => {
+    try {
+      const rec = recordingRef.current;
+      if (rec) {
+        try {
+          await rec.stopAndUnloadAsync();
+        } catch {}
+        recordingRef.current = null;
+      }
+    } catch {}
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setRecordingDuration(0);
+    setIsRecording(false);
+  };
 
   const { user } = useAuthStore();
   const navigation = useNavigation();
@@ -221,9 +502,22 @@ const ChatMessage = () => {
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
   const { chatId, chatData } = route.params;
-  const API_URL = "http://192.168.0.104:8000/api";
+  const API_URL = "http://192.168.0.105:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
+
+  const fetchAgoraToken = async (channelName, uid = 0) => {
+    try {
+      const { data } = await axios.post(`${CALL_URL}/token`, {
+        channelName: String(channelName),
+        uid,
+      });
+      return data?.token;
+    } catch (e) {
+      console.log("[v0] fetchAgoraToken error:", e?.message);
+      return undefined;
+    }
+  };
 
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);
@@ -234,6 +528,9 @@ const ChatMessage = () => {
       console.log("ChatMessage component unmounting");
       cleanupSocket();
       endVoiceCall(); // Ensure call is ended on unmount
+      try {
+        cancelVoiceRecording();
+      } catch {}
     };
   }, [chatId, user._id]);
 
@@ -375,6 +672,15 @@ const ChatMessage = () => {
     return FileSystem.documentDirectory + safeName;
   };
 
+  const isAudioFile = (fileType, fileName = "") => {
+    const t = (fileType || "").toLowerCase();
+    if (t.startsWith("audio/")) return true;
+    const n = (fileName || "").toLowerCase();
+    return [".m4a", ".aac", ".mp3", ".wav", ".ogg", ".amr", ".caf"].some(
+      (ext) => n.endsWith(ext)
+    );
+  };
+
   const getDocPreviewUrl = (url, type) => {
     try {
       const lower = (type || "").toLowerCase();
@@ -459,14 +765,30 @@ const ChatMessage = () => {
     };
   }, [messages]);
 
-  const sendMessage = async () => {
-    if ((!newMessage.trim() && !selectedFile) || sending) return;
+  const sendMessage = async (fileOverride) => {
+    // Treat RN TextInput onSubmitEditing event as undefined file override
+    const isValidFileOverride =
+      fileOverride &&
+      typeof fileOverride === "object" &&
+      "uri" in fileOverride &&
+      typeof fileOverride.uri === "string";
+
+    if (
+      (!newMessage.trim() && !selectedFile && !isValidFileOverride) ||
+      sending
+    )
+      return;
 
     const messageContent = newMessage.trim();
-    console.log("Sending message:", messageContent, "with file:", selectedFile);
+    console.log(
+      "Sending message:",
+      messageContent,
+      "with file:",
+      isValidFileOverride ? fileOverride : selectedFile
+    );
 
     setNewMessage("");
-    const fileToSend = selectedFile;
+    const fileToSend = isValidFileOverride ? fileOverride : selectedFile;
     setSelectedFile(null);
 
     try {
@@ -514,7 +836,11 @@ const ChatMessage = () => {
       console.error("Error sending message:", error);
       Alert.alert("Error", "Failed to send message");
       setNewMessage(messageContent);
-      setSelectedFile(fileToSend);
+      if (isValidFileOverride) {
+        setSelectedFile(fileOverride);
+      } else {
+        setSelectedFile(fileToSend);
+      }
     } finally {
       setSending(false);
     }
@@ -671,7 +997,10 @@ const ChatMessage = () => {
 
     const openPreview = () => {
       if (!item.fileUrl) return;
-      if (isImage(item.fileType)) {
+      // use isAudioFile helper
+      if (isAudioFile(item.fileType, item.fileUrl)) {
+        // Use the new AudioMessagePlayer component
+      } else if (item.fileType && item.fileType.startsWith("image/")) {
         setImagePreview({
           visible: true,
           url: item.fileUrl,
@@ -852,6 +1181,12 @@ const ChatMessage = () => {
                     )}
                   </View>
                 </View>
+              ) : isAudioFile(item.fileType, item.fileUrl) ? (
+                // Use the new AudioMessagePlayer component for audio files
+                <AudioMessagePlayer
+                  uri={item.fileUrl}
+                  isMyMessage={isMyMessage}
+                />
               ) : (
                 <View style={styles.documentContainer}>
                   <View style={styles.documentIcon}>
@@ -1091,6 +1426,7 @@ const ChatMessage = () => {
 
   const startVoiceCall = async () => {
     try {
+      // robust join: use Communication profile, enable audio, route to speaker, handle token renewals
       if (!AGORA_APP_ID) {
         Alert.alert(
           "Missing config",
@@ -1103,45 +1439,59 @@ const ChatMessage = () => {
 
       setCalling(true);
 
-      // Fetch token from backend
-      const { data } = await axios.post(`${CALL_URL}/token`, {
-        channelName: String(chatId),
-        uid: 0, // let Agora assign a uid
-      });
-      const token = data?.token;
+      // get token
+      const token = await fetchAgoraToken(chatId, 0);
       if (!token) {
         setCalling(false);
         Alert.alert("Token Error", "Failed to get Agora token.");
         return;
       }
 
-      // Create and configure engine (v4)
-      const engine = createAgoraRtcEngine();
-      engineRef.current = engine;
-      console.log(
-        "App ID:",
-        AGORA_APP_ID,
-        "Token:",
-        token,
-        "Channel:",
-        chatId,
-        "channelName:",
-        String(chatId)
-      );
-      engine.initialize({
-        appId: AGORA_APP_ID,
-        channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting,
-      });
-      engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
-      engine.setAudioProfile(
-        AudioProfileType.AudioProfileDefault,
-        AudioScenarioType.AudioScenarioCommunication
-      );
+      // reuse engine if exists, otherwise create
+      let engine = engineRef.current;
+      if (!engine) {
+        engine = createAgoraRtcEngine();
+        engineRef.current = engine;
+        engine.initialize({
+          appId: AGORA_APP_ID,
+          // Use Communication for 1:1/Group calls to avoid broadcaster/audience role drops
+          channelProfile: ChannelProfileType.ChannelProfileCommunication,
+        });
+        // communication doesn't require roles, but it's harmless to set
+        engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
+        engine.setAudioProfile(
+          AudioProfileType.AudioProfileDefault,
+          AudioScenarioType.AudioScenarioCommunication
+        );
 
-      // Event handlers
-      engine.registerEventHandler({
+        // ensure audio is active and routed to speaker by default
+        // (some platforms default to earpiece unless specified)
+        try {
+          engine.enableAudio && engine.enableAudio();
+          engine.enableLocalAudio && engine.enableLocalAudio(true);
+          // Set default route to speakerphone
+          if (typeof engine.setDefaultAudioRouteToSpeakerphone === "function") {
+            engine.setDefaultAudioRouteToSpeakerphone(true);
+          }
+        } catch (e) {
+          console.log("[v0] enable audio/route error:", e.message);
+        }
+      }
+
+      // unregister previous handler (if any) to avoid duplicate callbacks
+      if (
+        agoraHandlerRef.current &&
+        typeof engine.unregisterEventHandler === "function"
+      ) {
+        try {
+          engine.unregisterEventHandler(agoraHandlerRef.current);
+        } catch {}
+      }
+
+      const handler = {
         onJoinChannelSuccess: () => {
           setInCall(true);
+          setCalling(false);
         },
         onUserJoined: (uid) => {
           setRemoteUid(uid);
@@ -1151,16 +1501,54 @@ const ChatMessage = () => {
         },
         onError: (err) => {
           console.log("[v0] Agora Error:", err);
-          Alert.alert("Call Error", "An error occurred in the call.");
+          // avoid immediate teardown on ephemeral errors; let connection state handle it
         },
-      });
+        // auto-renew token before expiry to prevent drops
+        onTokenPrivilegeWillExpire: async () => {
+          try {
+            const newToken = await fetchAgoraToken(chatId, 0);
+            if (newToken) {
+              engine.renewToken && engine.renewToken(newToken);
+            }
+          } catch (e) {
+            console.log("[v0] renew token error:", e.message);
+          }
+        },
+        // monitor connection state for unexpected drops and try renewing token
+        onConnectionStateChanged: async (state, reason) => {
+          // If token expired or rejected, renew and keep the session alive
+          if (
+            reason ===
+              ConnectionChangedReasonType.ConnectionChangedRejectedByServer ||
+            reason ===
+              ConnectionChangedReasonType.ConnectionChangedTokenExpired ||
+            reason === ConnectionChangedReasonType.ConnectionChangedInvalidToken
+          ) {
+            try {
+              const newToken = await fetchAgoraToken(chatId, 0);
+              if (newToken) {
+                engine.renewToken && engine.renewToken(newToken);
+              }
+            } catch (e) {
+              console.log("[v0] renew on state change error:", e.message);
+            }
+          }
 
-      // Join channel (v4 signature)
+          // If truly disconnected and not user-triggered, keep modal open; user can decide to End, or it may reconnect via token renew
+          if (state === ConnectionStateType.ConnectionStateDisconnected) {
+            console.log("[v0] Agora disconnected (reason:", reason, ")");
+          }
+        },
+      };
+      engine.registerEventHandler(handler);
+      agoraHandlerRef.current = handler;
+
+      // join channel
       engine.joinChannel(token, String(chatId), 0, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
       });
     } catch (e) {
-      console.log("[v0] startVoiceCall error:", e?.message);
+      console.log("[v0] startVoiceCall error:", e.message);
       Alert.alert("Call Failed", "Unable to start the call.");
       setCalling(false);
     }
@@ -1170,12 +1558,22 @@ const ChatMessage = () => {
     try {
       const engine = engineRef.current;
       if (engine) {
-        await engine.leaveChannel();
-        if (typeof engine.unregisterEventHandler === "function") {
-          engine.unregisterEventHandler();
-        }
-        engine.release(); // v4 cleanup
+        try {
+          await engine.leaveChannel();
+        } catch {}
+        try {
+          if (
+            agoraHandlerRef.current &&
+            typeof engine.unregisterEventHandler === "function"
+          ) {
+            engine.unregisterEventHandler(agoraHandlerRef.current);
+          }
+        } catch {}
+        try {
+          engine.release && engine.release();
+        } catch {}
         engineRef.current = null;
+        agoraHandlerRef.current = null;
       }
     } catch (e) {
       console.log("[v0] endVoiceCall error:", e?.message);
@@ -1208,6 +1606,10 @@ const ChatMessage = () => {
       const next = !speakerOn;
       if (typeof engine.setEnableSpeakerphone === "function") {
         await engine.setEnableSpeakerphone(next);
+      } else if (
+        typeof engine.setDefaultAudioRouteToSpeakerphone === "function"
+      ) {
+        engine.setDefaultAudioRouteToSpeakerphone(next);
       }
       setSpeakerOn(next);
     } catch (e) {
@@ -1707,7 +2109,8 @@ const ChatMessage = () => {
                 ]}
                 onPress={toggleMute}
               >
-                <Text style={{ color: theme.text }}>
+                <Mic size={24} color={theme.text} />
+                <Text style={{ color: theme.text, marginTop: 4 }}>
                   {isMuted ? "Unmute" : "Mute"}
                 </Text>
               </TouchableOpacity>
@@ -1786,44 +2189,103 @@ const ChatMessage = () => {
           <Paperclip size={20} color={theme.secondaryText} />
         </TouchableOpacity>
 
-        <TextInput
-          style={[dynamicStyles.textInput, { marginLeft: 8 }]}
-          value={newMessage}
-          onChangeText={handleTyping}
-          placeholder={`Message ${
-            displayInfo.isGroup ? displayInfo.name : displayInfo.name
-          }...`}
-          placeholderTextColor={theme.secondaryText}
-          multiline
-          maxLength={500}
-          editable={!sending}
-          returnKeyType="send"
-          onSubmitEditing={sendMessage}
-          blurOnSubmit={false}
-        />
-        <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (newMessage.trim() || selectedFile) && !sending
-              ? dynamicStyles.sendButtonActive
-              : dynamicStyles.sendButtonInactive,
-          ]}
-          onPress={sendMessage}
-          disabled={(!newMessage.trim() && !selectedFile) || sending}
-        >
-          {sending ? (
-            <ActivityIndicator size={16} color={theme.buttonText} />
-          ) : (
-            <Send
+        {isRecording ? (
+          <View style={styles.recordingIndicator}>
+            <ActivityIndicator size={16} color={theme.accent} />
+            <Text style={[styles.recordingDuration, { color: theme.text }]}>
+              {formatMillis(recordingDuration)}
+            </Text>
+            <TouchableOpacity
+              onPress={stopVoiceRecording}
+              accessibilityRole="button"
+              accessibilityLabel="Stop recording"
+            >
+              <StopCircle size={32} color="#ef4444" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={stopAndSendVoiceRecording}
+              accessibilityRole="button"
+              accessibilityLabel="Send voice message"
+            >
+              <Send size={28} color={theme.accent} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={cancelVoiceRecording}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel recording"
+            >
+              <Text
+                style={[
+                  styles.cancelRecordingText,
+                  { color: theme.secondaryText },
+                ]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TextInput
+            style={[dynamicStyles.textInput, { marginLeft: 8 }]}
+            value={newMessage}
+            onChangeText={handleTyping}
+            placeholder={`Message ${
+              displayInfo.isGroup ? displayInfo.name : displayInfo.name
+            }...`}
+            placeholderTextColor={theme.secondaryText}
+            multiline
+            maxLength={500}
+            editable={!sending}
+            returnKeyType="send"
+            onSubmitEditing={sendMessage}
+            blurOnSubmit={false}
+          />
+        )}
+
+        {isRecording ? (
+          <View />
+        ) : (
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (newMessage.trim() || selectedFile) && !sending
+                ? dynamicStyles.sendButtonActive
+                : dynamicStyles.sendButtonInactive,
+            ]}
+            onPress={sendMessage}
+            disabled={(!newMessage.trim() && !selectedFile) || sending}
+          >
+            {sending ? (
+              <ActivityIndicator size={16} color={theme.buttonText} />
+            ) : (
+              <Send
+                size={40}
+                color={
+                  (newMessage.trim() || selectedFile) && !sending
+                    ? theme.buttonText
+                    : theme.secondaryText
+                }
+              />
+            )}
+          </TouchableOpacity>
+        )}
+
+        {!isRecording && (
+          <TouchableOpacity
+            style={[styles.micButton, { backgroundColor: theme.input }]}
+            onPress={startVoiceRecording}
+            disabled={sending || !!selectedFile}
+          >
+            <Mic
               size={20}
               color={
-                (newMessage.trim() || selectedFile) && !sending
-                  ? theme.buttonText
+                sending || !!selectedFile
+                  ? theme.secondaryText
                   : theme.secondaryText
               }
             />
-          )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -2272,6 +2734,72 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
+  },
+  // Voice Recording Styles
+  recordingIndicator: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginRight: 12,
+    height: 44,
+    borderRadius: 22,
+  },
+  recordingDuration: {
+    fontSize: 16,
+    fontWeight: "500",
+    marginLeft: 8,
+    flex: 1,
+  },
+  cancelRecordingText: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: 16,
+  },
+  micButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  // Audio Player Styles
+  audioPlayerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    width: 260, // Fixed width for audio messages
+  },
+  audioPlayButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    marginRight: 12,
+  },
+  audioMeta: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  audioProgressTrack: {
+    height: 6,
+    borderRadius: 3,
+    width: "100%",
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
+  audioProgressFill: {
+    height: "100%",
+    borderRadius: 3,
+  },
+  audioTimeLabel: {
+    fontSize: 11,
+    marginTop: 4,
   },
 });
 

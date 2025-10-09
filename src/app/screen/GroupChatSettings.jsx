@@ -34,7 +34,7 @@ const GroupChatSettings = () => {
   const route = useRoute();
 
   const { chatId, chatData } = route.params;
-  const API_URL = "http://192.168.0.104:8000/api";
+  const API_URL = "http://192.168.0.105:8000/api";
 
   useEffect(() => {
     setGroupData(chatData);

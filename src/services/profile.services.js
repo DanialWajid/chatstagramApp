@@ -1,7 +1,7 @@
 import axios from "axios";
 import * as SecureStore from "expo-secure-store";
 
-const API_URL = "http://192.168.0.104:8000/api/profile";
+const API_URL = "http://192.168.0.105:8000/api/profile";
 
 export const updateProfile = async (formData, id) => {
   try {

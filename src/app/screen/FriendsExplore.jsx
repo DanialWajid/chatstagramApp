@@ -23,7 +23,7 @@ const FriendsExplore = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.104:8000";
+  const API_URL = "http://192.168.0.105:8000";
 
   useEffect(() => {
     fetchPotentialFriends();
