@@ -24,7 +24,7 @@ const Friends = () => {
   const { user } = useAuthStore();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.105:8000";
+  const API_URL = "http://192.168.0.110:8000";
 
   useEffect(() => {
     fetchData();
