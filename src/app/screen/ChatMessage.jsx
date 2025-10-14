@@ -34,7 +34,6 @@ import {
   Mic,
   Play,
   Pause,
-  StopCircle,
 } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
@@ -53,10 +52,11 @@ import {
   ConnectionStateType,
   ConnectionChangedReasonType,
 } from "react-native-agora";
-import { Audio, Video } from "expo-av"; // import Video player and video icon
-import {
-  Video as VideoIcon, // alias to avoid clashing with expo-av's Video
-} from "lucide-react-native";
+import { Audio, Video, ResizeMode } from "expo-av";
+import VideoMessage from "../../components/videoMessage";
+import FileMessage from "../../components/fileMessage";
+import { VoiceRecorderControls } from "../../components/voiceNotes";
+import VoiceCallModal from "../../components/voiceCallModal";
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -373,13 +373,6 @@ const ChatMessage = () => {
   const agoraHandlerRef = useRef(null);
   // Changed to useRef<any> | null
 
-  // Replace with VideoPlayer component in MessageBubble for video files
-  // const [videoPreview, setVideoPreview] = useState({
-  //   visible: false,
-  //   url: "",
-  //   fromMe: false,
-  // });
-
   const formatMillis = (millis) => {
     const totalSeconds = Math.floor(millis / 1000);
     const m = Math.floor(totalSeconds / 60)
@@ -672,15 +665,12 @@ const ChatMessage = () => {
   const getLocalTargetForItem = (item) => {
     if (!item?.fileUrl && !item?.fileName) return null;
     const isImage = (t) => t && t.startsWith("image/");
-    const isVideo = (t) => t && t.startsWith("video/");
     const fromUrl = item?.fileUrl?.split("/")?.pop() || "";
     const baseName =
       item?.fileName ||
       fromUrl ||
       (isImage(item?.fileType)
         ? `image_${item?._id || Date.now()}.jpg`
-        : isVideo(item?.fileType)
-        ? `video_${item?._id || Date.now()}.mp4`
         : `file_${item?._id || Date.now()}`);
     const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(baseName);
     const extFromType = item?.fileType?.split("/")[1] || (hasExt ? "" : "bin");
@@ -703,7 +693,7 @@ const ChatMessage = () => {
     const t = (fileType || "").toLowerCase();
     if (t.startsWith("video/")) return true;
     const n = (fileName || "").toLowerCase();
-    return [".mp4", ".mov", ".m4v", ".avi", ".webm", ".mkv", ".3gp"].some(
+    return [".mp4", ".mov", ".m4v", ".avi", ".webm", ".3gp", ".mkv"].some(
       (ext) => n.endsWith(ext)
     );
   };
@@ -768,9 +758,7 @@ const ChatMessage = () => {
     (async () => {
       const updates = {};
       const fileMessages = messages.filter(
-        (m) =>
-          (m?.type === "file" || m?.type === "video" || m?.type === "audio") &&
-          m?.fileUrl
+        (m) => m?.type === "file" && m?.fileUrl
       );
       await Promise.all(
         fileMessages.map(async (m) => {
@@ -927,6 +915,75 @@ const ChatMessage = () => {
     }
   };
 
+  const selectVideoFromLibrary = async () => {
+    try {
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Media library permission is needed to pick videos."
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        allowsEditing: false,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const last = asset.uri.split("/").pop() || `video_${Date.now()}`;
+        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
+        const name = asset.fileName || (hasExt ? last : `${last}.mp4`);
+        setSelectedFile({
+          uri: asset.uri,
+          name,
+          type: "video/mp4",
+          size: asset.fileSize || 0,
+        });
+        setShowFileOptions(false);
+      }
+    } catch (e) {
+      console.log("[v0] selectVideoFromLibrary error:", e?.message);
+      Alert.alert("Error", "Failed to select video");
+    }
+  };
+
+  const recordVideoWithCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          "Camera permission is needed to record videos."
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        videoMaxDuration: 60,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const last = asset.uri.split("/").pop() || `video_${Date.now()}`;
+        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
+        const name = asset.fileName || (hasExt ? last : `${last}.mp4`);
+        setSelectedFile({
+          uri: asset.uri,
+          name,
+          type: "video/mp4",
+          size: asset.fileSize || 0,
+        });
+        setShowFileOptions(false);
+      }
+    } catch (e) {
+      console.log("[v0] recordVideoWithCamera error:", e?.message);
+      Alert.alert("Error", "Failed to record video");
+    }
+  };
+
   const selectImageFromGallery = async () => {
     try {
       const { status } =
@@ -967,85 +1024,6 @@ const ChatMessage = () => {
     }
   };
 
-  const selectVideoFromGallery = async () => {
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Media library permission is needed to pick videos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        quality: 0.8,
-        allowsEditing: false,
-      });
-
-      if (!result.canceled && result.assets?.[0]) {
-        const asset = result.assets[0];
-        const last = asset.uri.split("/").pop() || `video_${Date.now()}`;
-        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
-        const fallbackExt = ".mp4";
-        const name =
-          asset.fileName || (hasExt ? last : `${last}${fallbackExt}`);
-
-        setSelectedFile({
-          uri: asset.uri,
-          name,
-          type: asset.mimeType || "video/mp4",
-          size: asset.fileSize || 0,
-        });
-        setShowFileOptions(false);
-      }
-    } catch (error) {
-      console.error("[v0] Error selecting video:", error);
-      Alert.alert("Error", "Failed to select video");
-    }
-  };
-
-  const recordVideo = async () => {
-    try {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (perm.status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Camera permission is needed to record videos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        videoMaxDuration: 60,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets?.[0]) {
-        const asset = result.assets[0];
-        const last = asset.uri.split("/").pop() || `video_${Date.now()}`;
-        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
-        const fallbackExt = ".mp4";
-        const name =
-          asset.fileName || (hasExt ? last : `${last}${fallbackExt}`);
-
-        setSelectedFile({
-          uri: asset.uri,
-          name,
-          type: asset.mimeType || "video/mp4",
-          size: asset.fileSize || 0,
-        });
-        setShowFileOptions(false);
-      }
-    } catch (error) {
-      console.error("[v0] Error recording video:", error);
-      Alert.alert("Error", "Failed to record video");
-    }
-  };
-
   const selectDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -1075,45 +1053,6 @@ const ChatMessage = () => {
     }
   };
 
-  const selectVideo = async () => {
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Media library permission is needed to pick videos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-        allowsEditing: true,
-        aspect: [16, 9], // Common aspect ratio for videos
-        quality: 0.7, // Adjust quality as needed
-      });
-
-      if (!result.canceled && result.assets?.[0]) {
-        const asset = result.assets[0];
-        const last = asset.uri.split("/").pop() || `video_${Date.now()}`;
-        const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
-        const name = asset.fileName || (hasExt ? last : `${last}.mp4`);
-
-        setSelectedFile({
-          uri: asset.uri,
-          name,
-          type: asset.type || "video/mp4",
-          size: asset.fileSize || 0,
-        });
-        setShowFileOptions(false);
-      }
-    } catch (error) {
-      console.error("[v0] Error selecting video:", error);
-      Alert.alert("Error", "Failed to select video");
-    }
-  };
-
   const removeSelectedFile = () => {
     setSelectedFile(null);
   };
@@ -1139,17 +1078,14 @@ const ChatMessage = () => {
     const { theme } = useTheme();
     const isMyMessage = item.sender._id === user._id;
     const isFileMessage = item.type === "file" && item.fileUrl;
-    const isImageMessage = item.type === "image" && item.fileUrl;
-    const isVideoMessage = item.type === "video" && item.fileUrl;
-    const isAudioMessage = item.type === "audio" && item.fileUrl;
-
     const msgKey = getMessageKey(item);
     const localInfo = downloadedMap[msgKey];
 
     const openPreview = () => {
       if (!item.fileUrl) return;
-      // audio handled inline via player
-      if (item.fileType && item.fileType.startsWith("image/")) {
+      if (isAudioFile(item.fileType, item.fileUrl)) {
+        // audio handled inline
+      } else if (item.fileType && item.fileType.startsWith("image/")) {
         setImagePreview({
           visible: true,
           url: item.fileUrl,
@@ -1251,16 +1187,13 @@ const ChatMessage = () => {
               : [styles.theirMessageBubble, { backgroundColor: theme.input }],
           ]}
         >
-          {isFileMessage ||
-          isImageMessage ||
-          isVideoMessage ||
-          isAudioMessage ? (
+          {isFileMessage ? (
             <TouchableOpacity
               onPress={openPreview}
               style={styles.fileContainer}
               activeOpacity={0.9}
             >
-              {isImageMessage ? (
+              {isImage(item.fileType) ? (
                 <View>
                   <Image
                     source={{ uri: item.fileUrl }}
@@ -1346,169 +1279,29 @@ const ChatMessage = () => {
                   isMyMessage={isMyMessage}
                 />
               ) : isVideoFile(item.fileType, item.fileUrl) ? (
-                <View>
-                  <Video
-                    source={{ uri: item.fileUrl }}
-                    style={styles.videoMessage}
-                    useNativeControls
-                    resizeMode="contain"
-                  />
-                  {item.content && (
-                    <Text
-                      style={[
-                        styles.messageText,
-                        { marginTop: 8 },
-                        isMyMessage
-                          ? { color: theme.buttonText || "#FFFFFF" }
-                          : { color: theme.text },
-                      ]}
-                    >
-                      {item.content}
-                    </Text>
-                  )}
-                  <View style={styles.inlineActions}>
-                    {localInfo?.exists ? (
-                      <TouchableOpacity
-                        style={[
-                          styles.inlineActionBtn,
-                          {
-                            backgroundColor: isMyMessage
-                              ? "rgba(255,255,255,0.2)"
-                              : "#00000020",
-                          },
-                        ]}
-                        onPress={openLocal}
-                      >
-                        <Text
-                          style={[
-                            styles.inlineActionText,
-                            { color: isMyMessage ? "#fff" : "#000" },
-                          ]}
-                        >
-                          Open
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[
-                          styles.inlineActionBtn,
-                          {
-                            backgroundColor: isMyMessage
-                              ? "rgba(255,255,255,0.2)"
-                              : "#00000020",
-                          },
-                        ]}
-                        onPress={downloadCurrent}
-                      >
-                        {downloadingId === (item._id || msgKey) ? (
-                          <ActivityIndicator
-                            size={14}
-                            color={isMyMessage ? "#fff" : "#000"}
-                          />
-                        ) : (
-                          <Download
-                            size={16}
-                            color={isMyMessage ? "#fff" : "#000"}
-                          />
-                        )}
-                        <Text
-                          style={[
-                            styles.inlineActionText,
-                            { color: isMyMessage ? "#fff" : "#000" },
-                          ]}
-                        >
-                          Download
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+                <VideoMessage
+                  item={item}
+                  isMyMessage={isMyMessage}
+                  localInfo={localInfo}
+                  onOpenLocal={openLocal}
+                  onDownload={downloadCurrent}
+                />
               ) : (
-                <View style={styles.documentContainer}>
-                  <View style={styles.documentIcon}>
-                    <ImageIcon size={20} color={theme.accent} />
-                  </View>
-                  <View style={styles.documentInfo}>
-                    <Text
-                      style={[
-                        styles.documentName,
-                        isMyMessage
-                          ? { color: theme.buttonText || "#FFFFFF" }
-                          : { color: theme.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {getDisplayFileName(item)}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.documentSize,
-                        isMyMessage
-                          ? {
-                              color: theme.buttonText || "#FFFFFF",
-                              opacity: 0.7,
-                            }
-                          : { color: theme.secondaryText },
-                      ]}
-                    >
-                      {formatFileSize(item.fileSize || 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.docActions}>
-                    <TouchableOpacity
-                      onPress={openPreview}
-                      style={styles.docActionBtn}
-                    >
-                      <Text
-                        style={[
-                          styles.docActionText,
-                          { color: isMyMessage ? "#fff" : theme.text },
-                        ]}
-                      >
-                        Preview
-                      </Text>
-                    </TouchableOpacity>
-                    {localInfo?.exists ? (
-                      <TouchableOpacity
-                        onPress={openLocal}
-                        style={styles.docActionBtn}
-                      >
-                        <Text
-                          style={[
-                            styles.docActionText,
-                            { color: isMyMessage ? "#fff" : theme.text },
-                          ]}
-                        >
-                          Open
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        onPress={downloadCurrent}
-                        style={styles.docActionBtn}
-                      >
-                        {downloadingId === (item._id || msgKey) ? (
-                          <ActivityIndicator
-                            size={14}
-                            color={isMyMessage ? "#fff" : theme.text}
-                          />
-                        ) : (
-                          <Download
-                            size={20}
-                            color={isMyMessage ? "#fff" : theme.text}
-                          />
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
+                <FileMessage
+                  item={item}
+                  isMyMessage={isMyMessage}
+                  localInfo={localInfo}
+                  onPreview={openPreview}
+                  onDownload={downloadCurrent}
+                  onOpenLocal={openLocal}
+                  getDisplayFileName={getDisplayFileName}
+                  formatFileSize={formatFileSize}
+                />
               )}
 
               {item.content &&
-                !isImage(item.fileType) &&
-                !isImageMessage &&
-                !isVideoMessage &&
-                !isAudioMessage && (
+                !(item.fileType && item.fileType.startsWith("image/")) &&
+                !isVideoFile(item.fileType, item.fileUrl) && (
                   <Text
                     style={[
                       styles.messageText,
@@ -2015,14 +1808,13 @@ const ChatMessage = () => {
       <Modal
         visible={showFileOptions}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setShowFileOptions(false)}
       >
         <View style={styles.fileOptionsOverlay}>
           <TouchableOpacity
             style={styles.fileOptionsBackdrop}
             onPress={() => setShowFileOptions(false)}
-            activeOpacity={1}
           />
           <View
             style={[
@@ -2039,27 +1831,24 @@ const ChatMessage = () => {
                 Choose Image
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={selectVideoFromGallery}
+              onPress={selectVideoFromLibrary}
             >
-              <VideoIcon size={20} color={theme.accent} />
+              <ImageIcon size={20} color={theme.accent} />
               <Text style={[styles.fileOptionText, { color: theme.text }]}>
                 Choose Video
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={recordVideo}
+              onPress={recordVideoWithCamera}
             >
-              <VideoIcon size={20} color={theme.accent} />
+              <ImageIcon size={20} color={theme.accent} />
               <Text style={[styles.fileOptionText, { color: theme.text }]}>
                 Record Video
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[styles.fileOption, { borderBottomColor: theme.border }]}
               onPress={selectDocument}
@@ -2069,7 +1858,6 @@ const ChatMessage = () => {
                 Choose Document
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               onPress={() => setShowFileOptions(false)}
               style={{ paddingVertical: 16, alignItems: "center" }}
@@ -2169,11 +1957,14 @@ const ChatMessage = () => {
           <View style={styles.previewContent}>
             <Video
               source={{ uri: videoPreview.url }}
-              style={styles.previewImage /* reuse container sizing */}
-              resizeMode="contain"
-              useNativeControls // Use native controls for video playback
-              onLoad={() => console.log("Video loaded")}
-              onError={(e) => console.error("Video playback error:", e)}
+              style={{
+                width: "100%",
+                height: "100%",
+                borderRadius: 12,
+                backgroundColor: "#000",
+              }}
+              resizeMode={ResizeMode.CONTAIN}
+              useNativeControls
             />
             <View style={styles.previewActions}>
               <TouchableOpacity
@@ -2192,8 +1983,7 @@ const ChatMessage = () => {
                     const msg = messages.find(
                       (m) => m?.fileUrl === videoPreview.url
                     );
-                    let target;
-                    let key;
+                    let target, key;
                     if (msg) {
                       target = getLocalTargetForItem(msg);
                       key = getMessageKey(msg);
@@ -2403,81 +2193,17 @@ const ChatMessage = () => {
         </View>
       </Modal>
 
-      <Modal
+      <VoiceCallModal
         visible={calling || inCall}
-        transparent
-        animationType="fade"
-        onRequestClose={endVoiceCall}
-      >
-        <View style={styles.callModalBackdrop}>
-          <View
-            style={[
-              styles.callModal,
-              { backgroundColor: theme.card, borderColor: theme.border },
-            ]}
-          >
-            <Text style={[styles.callTitle, { color: theme.text }]}>
-              {inCall ? "In Call" : "Calling..."}
-            </Text>
-            <Text
-              style={[styles.callSubtitle, { color: theme.secondaryText }]}
-              numberOfLines={1}
-            >
-              {displayInfo?.name}
-            </Text>
-
-            <View style={styles.callStatusRow}>
-              <View
-                style={[
-                  styles.callStatusDot,
-                  { backgroundColor: inCall ? "#10b981" : "#f59e0b" },
-                ]}
-              />
-              <Text style={{ color: theme.secondaryText }}>
-                {inCall
-                  ? remoteUid
-                    ? `Connected • User ${remoteUid}`
-                    : "Connected"
-                  : "Ringing"}
-              </Text>
-            </View>
-
-            <View style={styles.callControls}>
-              <TouchableOpacity
-                style={[
-                  styles.callControlBtn,
-                  { backgroundColor: isMuted ? theme.input : theme.input },
-                ]}
-                onPress={toggleMute}
-              >
-                <Mic size={24} color={theme.text} />
-                <Text style={{ color: theme.text, marginTop: 4 }}>
-                  {isMuted ? "Unmute" : "Mute"}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.callControlBtn,
-                  { backgroundColor: theme.input },
-                ]}
-                onPress={toggleSpeaker}
-              >
-                <Text style={{ color: theme.text }}>
-                  {speakerOn ? "Earpiece" : "Speaker"}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.callEndBtn, { backgroundColor: "#ef4444" }]}
-                onPress={endVoiceCall}
-              >
-                <Text style={{ color: "#fff" }}>End</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        inCall={inCall}
+        displayName={displayInfo?.name}
+        isMuted={isMuted}
+        speakerOn={speakerOn}
+        remoteUid={remoteUid}
+        onToggleMute={toggleMute}
+        onToggleSpeaker={toggleSpeaker}
+        onEnd={endVoiceCall}
+      />
 
       {selectedFile && (
         <View
@@ -2490,8 +2216,6 @@ const ChatMessage = () => {
             <View style={styles.selectedFileIcon}>
               {selectedFile.type.startsWith("image/") ? (
                 <ImageIcon size={20} color={theme.accent} />
-              ) : selectedFile.type.startsWith("video/") ? (
-                <VideoIcon size={20} color={theme.accent} />
               ) : (
                 <ImageIcon size={20} color={theme.accent} />
               )}
@@ -2533,40 +2257,13 @@ const ChatMessage = () => {
         </TouchableOpacity>
 
         {isRecording ? (
-          <View style={styles.recordingIndicator}>
-            <ActivityIndicator size={16} color={theme.accent} />
-            <Text style={[styles.recordingDuration, { color: theme.text }]}>
-              {formatMillis(recordingDuration)}
-            </Text>
-            <TouchableOpacity
-              onPress={stopVoiceRecording}
-              accessibilityRole="button"
-              accessibilityLabel="Stop recording"
-            >
-              <StopCircle size={32} color="#ef4444" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={stopAndSendVoiceRecording}
-              accessibilityRole="button"
-              accessibilityLabel="Send voice message"
-            >
-              <Send size={28} color={theme.accent} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={cancelVoiceRecording}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel recording"
-            >
-              <Text
-                style={[
-                  styles.cancelRecordingText,
-                  { color: theme.secondaryText },
-                ]}
-              >
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <VoiceRecorderControls
+            isRecording={isRecording}
+            recordingDuration={recordingDuration}
+            onStop={stopVoiceRecording}
+            onStopAndSend={stopAndSendVoiceRecording}
+            onCancel={cancelVoiceRecording}
+          />
         ) : (
           <TextInput
             style={[dynamicStyles.textInput, { marginLeft: 8 }]}
@@ -2873,29 +2570,6 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 12,
   },
-  videoMessageContainer: {
-    width: 200,
-    height: 150,
-    borderRadius: 12,
-    overflow: "hidden",
-    position: "relative",
-  },
-  videoMessage: {
-    width: 240,
-    height: 160,
-    borderRadius: 12,
-    backgroundColor: "#000",
-  },
-  playButtonOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.3)",
-  },
   documentContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -2971,11 +2645,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   previewImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 12,
-  },
-  previewVideo: {
     width: "100%",
     height: "100%",
     borderRadius: 12,
