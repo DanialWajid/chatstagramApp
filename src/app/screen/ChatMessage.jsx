@@ -168,7 +168,7 @@ const ChatMessage = () => {
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
   const { chatId, chatData } = route.params;
-  const API_URL = "http://192.168.0.109:8000/api";
+  const API_URL = "http://192.168.100.15:8000/api";
 
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);

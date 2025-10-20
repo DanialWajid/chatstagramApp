@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "http://192.168.0.109:8000/api/user";
+const API_URL = "http://192.168.100.15:8000/api/user";
 
 export const enable2FA = async (userId) => {
   try {

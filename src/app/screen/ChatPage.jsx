@@ -23,6 +23,8 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import SideNav from "../../components/SideNav";
 import Navbar from "../../components/Navbar";
+import LongPressMenu from "../../components/LongPressMenu";
+import ReportModal from "../../components/ReportModal";
 
 const { width } = Dimensions.get("window");
 
@@ -122,6 +124,11 @@ const ChatPage = () => {
   const [showAllFriends, setShowAllFriends] = useState(false);
   const [typingStatus, setTypingStatus] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({}); // { chatId: count }
+  const [showLongPressMenu, setShowLongPressMenu] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [selectedReportedUser, setSelectedReportedUser] = useState(null);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -132,7 +139,7 @@ const ChatPage = () => {
   const navbarTranslateY = useRef(new Animated.Value(0)).current;
   const isScrollingDown = useRef(false);
 
-  const API_URL = "http://192.168.0.109:8000/api";
+  const API_URL = "http://192.168.100.15:8000/api";
 
   // Enhanced Socket Connection with better error handling and reconnection
   useEffect(() => {
@@ -701,6 +708,51 @@ const ChatPage = () => {
     },
   };
 
+  const handleLongPress = (chat, event) => {
+    // Get the other user in the chat (for DM) or show group info
+    let reportedUser = null;
+
+    if (chat.isGroupChat) {
+      // For group chats, you might want to show different options
+      // For now, we'll just return without showing report option
+      Alert.alert(
+        "Group Chat",
+        "Please report individual users from the chat screen"
+      );
+      return;
+    } else {
+      // For direct messages, get the other user
+      reportedUser = chat.users.find((u) => u._id !== user._id);
+    }
+
+    if (!reportedUser) {
+      Alert.alert("Error", "Unable to identify user to report");
+      return;
+    }
+
+    // Get touch position for menu placement
+    const { pageX, pageY } = event.nativeEvent;
+    setMenuPosition({ x: pageX - 80, y: pageY });
+
+    setSelectedChat(chat);
+    setSelectedReportedUser(reportedUser);
+    setShowLongPressMenu(true);
+  };
+
+  const handleReportUser = () => {
+    setShowLongPressMenu(false);
+    // Small delay to ensure menu is closed before opening modal
+    setTimeout(() => {
+      setShowReportModal(true);
+    }, 100);
+  };
+
+  const handleCloseReportModal = () => {
+    setShowReportModal(false);
+    setSelectedChat(null);
+    setSelectedReportedUser(null);
+  };
+
   const renderChatCard = ({ item }) => {
     const displayInfo = getChatDisplayInfo(item);
     const typingUsers = typingStatus[item._id] || [];
@@ -715,6 +767,8 @@ const ChatPage = () => {
           hasUnread && dynamicStyles.chatCardUnread,
         ]}
         onPress={() => navigateToExistingChat(item)}
+        onLongPress={(event) => handleLongPress(item, event)}
+        delayLongPress={500}
       >
         <View style={styles.chatCardContent}>
           <View style={styles.avatarContainer}>
@@ -1017,6 +1071,23 @@ const ChatPage = () => {
           )}
         </View>
       )}
+
+      {/* Long Press Menu */}
+      <LongPressMenu
+        visible={showLongPressMenu}
+        onClose={() => setShowLongPressMenu(false)}
+        onReportUser={handleReportUser}
+        chatData={selectedChat}
+        position={menuPosition}
+      />
+
+      {/* Report Modal */}
+      <ReportModal
+        visible={showReportModal}
+        onClose={handleCloseReportModal}
+        chatData={selectedChat}
+        reportedUser={selectedReportedUser}
+      />
 
       {/* Animated SideNav */}
       <Animated.View style={dynamicStyles.sideNavContainer}>
