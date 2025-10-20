@@ -12,6 +12,7 @@ import {
   Modal,
   RefreshControl,
   ScrollView,
+  Clipboard,
 } from "react-native";
 import {
   Shield,
@@ -20,6 +21,7 @@ import {
   LockOpen,
   User,
   ArrowLeft,
+  Copy,
 } from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import {
@@ -50,6 +52,7 @@ const Profile = () => {
   const [isBlocked, setIsBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showCopySuccess, setShowCopySuccess] = useState(false);
   const { user, logout } = useAuthStore();
   const { theme } = useTheme();
   const [is2FAEnabled, setIs2FAEnabled] = useState(false);
@@ -116,6 +119,13 @@ const Profile = () => {
       console.error("Error disabling 2FA:", error);
       throw error;
     }
+  };
+  const handleCopyUserId = () => {
+    Clipboard.setString(userId);
+    setShowCopySuccess(true);
+    setTimeout(() => {
+      setShowCopySuccess(false);
+    }, 3000);
   };
 
   if (loading) {
@@ -186,6 +196,41 @@ const Profile = () => {
               <Text style={[styles.profileBio, { color: theme.secondaryText }]}>
                 {profile.bio}
               </Text>
+            )}
+
+            {id === userId && !isBlocked && (
+              <View style={styles.userIdContainer}>
+                <View
+                  style={[
+                    styles.userIdBox,
+                    { backgroundColor: theme.input, borderColor: theme.border },
+                  ]}
+                >
+                  <Text
+                    style={[styles.userIdLabel, { color: theme.secondaryText }]}
+                  >
+                    User ID:
+                  </Text>
+                  <Text style={[styles.userIdText, { color: theme.text }]}>
+                    {userId}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.copyButton, { backgroundColor: theme.accent }]}
+                  onPress={handleCopyUserId}
+                >
+                  <Copy size={18} color={theme.buttonText} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Copy Success Message */}
+            {showCopySuccess && (
+              <View style={styles.copySuccessContainer}>
+                <Text style={styles.copySuccessText}>
+                  User ID copied successfully ✅
+                </Text>
+              </View>
             )}
 
             {/* Stats Row */}
@@ -425,6 +470,53 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 20,
     lineHeight: 20,
+  },
+  userIdContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  userIdBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  userIdLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  userIdText: {
+    fontSize: 13,
+    fontWeight: "500",
+    fontFamily: "monospace",
+  },
+  copyButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  copySuccessContainer: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  copySuccessText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#10b981",
   },
   statsContainer: {
     flexDirection: "row",

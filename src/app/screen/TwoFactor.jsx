@@ -28,7 +28,7 @@ export default function TwoFactorAuthScreen() {
       if (!storedUserId && !twoFactorRequired) {
         navigation.navigate("Login");
       } else {
-        setPendingUserId(storedUserId); // ✅ store it in state
+        setPendingUserId(storedUserId); //  store it in state
         setIsPageLoading(false);
       }
     };

@@ -121,7 +121,7 @@ export const useAuthStore = create((set) => ({
 
       if (token) {
         await SecureStore.setItemAsync("token", token);
-        console.log("✅ Token stored successfully.");
+        console.log(" Token stored successfully.");
       }
 
       if (response.data?.user) {

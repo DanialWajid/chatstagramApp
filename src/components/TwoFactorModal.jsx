@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  StyleSheet, // ✅ add this
+  StyleSheet, //  add this
 } from "react-native";
 import { X, Shield, ShieldOff, Copy, Check } from "lucide-react-native";
 
@@ -131,8 +131,8 @@ export default function TwoFactorModal({
 
       <TouchableOpacity
         onPress={() => {
-          setShowQR(false); // ✅ hide QR after saving
-          onClose(); // ✅ close modal
+          setShowQR(false); //  hide QR after saving
+          onClose(); //  close modal
         }}
         style={styles.primaryButton}
       >

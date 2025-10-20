@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   StyleSheet,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { Audio } from "expo-av";
 import { Pause, Play, StopCircle, Send } from "lucide-react-native";
@@ -16,12 +17,15 @@ import { useTheme } from "../store/themeContext";
 export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
   const { theme } = useTheme();
   const soundRef = useRef(null);
+  const progressBarRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [barWidth, setBarWidth] = useState(1);
 
   const formatMillis = (millis) => {
+    if (!millis) return "00:00";
     const totalSeconds = Math.floor(millis / 1000);
     const m = Math.floor(totalSeconds / 60)
       .toString()
@@ -32,6 +36,7 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
     return `${m}:${s}`;
   };
 
+  // Cleanup sound on unmount
   useEffect(() => {
     return () => {
       if (soundRef.current) {
@@ -43,12 +48,15 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
     };
   }, []);
 
+  // Ensure sound is loaded once
   const ensureLoaded = async () => {
     if (soundRef.current) return;
     setIsLoading(true);
     const s = new Audio.Sound();
-    s.setOnPlaybackStatusUpdate((status) => {
+
+    s.setOnPlaybackStatusUpdate(async (status) => {
       if (!status) return;
+
       if ("positionMillis" in status && "durationMillis" in status) {
         setPosition(status.positionMillis || 0);
         setDuration(status.durationMillis || 0);
@@ -56,30 +64,63 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
       if ("isPlaying" in status) {
         setIsPlaying(status.isPlaying);
       }
+
+      //  Reset when playback finishes
       if (status.didJustFinish) {
+        try {
+          await s.stopAsync();
+          await s.setPositionAsync(0);
+        } catch (e) {
+          console.warn("Error resetting after finish:", e);
+        }
         setIsPlaying(false);
-        setPosition(status.durationMillis || 0);
+        setPosition(0);
       }
     });
+
     try {
       await s.loadAsync({ uri }, {}, true);
+      soundRef.current = s;
     } catch (e) {
-      console.log("[v0] load sound error:", e?.message);
+      console.log("[AudioPlayer] load error:", e?.message);
       Alert.alert("Playback Error", "Unable to load audio.");
     } finally {
       setIsLoading(false);
-      soundRef.current = s;
     }
   };
 
+  // Toggle Play / Pause / Replay
   const togglePlay = async () => {
     await ensureLoaded();
     if (!soundRef.current) return;
+
     const status = await soundRef.current.getStatusAsync();
+
     if (status.isPlaying) {
       await soundRef.current.pauseAsync();
     } else {
+      if (
+        status.didJustFinish ||
+        status.positionMillis >= status.durationMillis
+      ) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.setPositionAsync(0);
+      }
       await soundRef.current.playAsync();
+    }
+  };
+
+  // Tap-to-seek progress bar
+  const handleSeek = async (e) => {
+    if (!soundRef.current || duration === 0) return;
+    const { locationX } = e.nativeEvent;
+    const pct = Math.max(0, Math.min(1, locationX / barWidth));
+    const newPos = pct * duration;
+    try {
+      await soundRef.current.setPositionAsync(newPos);
+      setPosition(newPos);
+    } catch (err) {
+      console.warn("Seek error:", err);
     }
   };
 
@@ -96,6 +137,7 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
         },
       ]}
     >
+      {/* Play / Pause button */}
       <TouchableOpacity
         onPress={togglePlay}
         style={[
@@ -118,27 +160,34 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
           <Play size={16} color={isMyMessage ? "#fff" : theme.text} />
         )}
       </TouchableOpacity>
+
+      {/* Progress bar + time display */}
       <View style={styles.audioMeta}>
-        <View
-          style={[
-            styles.audioProgressTrack,
-            {
-              backgroundColor: isMyMessage
-                ? "rgba(255,255,255,0.25)"
-                : theme.border,
-            },
-          ]}
-        >
+        <TouchableWithoutFeedback onPress={handleSeek}>
           <View
             style={[
-              styles.audioProgressFill,
+              styles.audioProgressTrack,
               {
-                width: `${pct}%`,
-                backgroundColor: isMyMessage ? "#ffffff" : theme.accent,
+                backgroundColor: isMyMessage
+                  ? "rgba(255,255,255,0.25)"
+                  : theme.border,
               },
             ]}
-          />
-        </View>
+            ref={progressBarRef}
+            onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+          >
+            <View
+              style={[
+                styles.audioProgressFill,
+                {
+                  width: `${pct}%`,
+                  backgroundColor: isMyMessage ? "#ffffff" : theme.accent,
+                },
+              ]}
+            />
+          </View>
+        </TouchableWithoutFeedback>
+
         <Text
           style={[
             styles.audioTimeLabel,
@@ -156,6 +205,7 @@ export const AudioMessagePlayer = ({ uri, isMyMessage }) => {
   );
 };
 
+// 🎙 Voice Recorder Controls
 export const VoiceRecorderControls = ({
   isRecording,
   recordingDuration,
@@ -188,25 +238,13 @@ export const VoiceRecorderControls = ({
       <Text style={[styles.recordingDuration, { color: theme.text }]}>
         {formatMillis(recordingDuration)}
       </Text>
-      <TouchableOpacity
-        onPress={onStop}
-        accessibilityRole="button"
-        accessibilityLabel="Stop recording"
-      >
+      <TouchableOpacity onPress={onStop}>
         <StopCircle size={32} color="#ef4444" />
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={onStopAndSend}
-        accessibilityRole="button"
-        accessibilityLabel="Send voice message"
-      >
+      <TouchableOpacity onPress={onStopAndSend}>
         <Send size={28} color={theme.accent} />
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={onCancel}
-        accessibilityRole="button"
-        accessibilityLabel="Cancel recording"
-      >
+      <TouchableOpacity onPress={onCancel}>
         <Text
           style={[styles.cancelRecordingText, { color: theme.secondaryText }]}
         >
@@ -218,7 +256,6 @@ export const VoiceRecorderControls = ({
 };
 
 const styles = StyleSheet.create({
-  // reused from original
   recordingIndicator: {
     flex: 1,
     flexDirection: "row",
@@ -262,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.1)",
   },
   audioProgressFill: { height: "100%", borderRadius: 3 },
-  audioTimeLabel: { fontSize: 11, marginTop: 4 },
+  audioTimeLabel: { fontSize: 11, marginTop: 4, alignSelf: "flex-end" },
 });
 
 export default AudioMessagePlayer;
