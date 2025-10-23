@@ -3,6 +3,7 @@
 import { Modal, Text, TouchableOpacity, View, StyleSheet } from "react-native";
 import { Mic } from "lucide-react-native";
 import { useTheme } from "../store/themeContext";
+import { useEffect } from "react";
 
 export default function VoiceCallModal({
   visible,
@@ -16,6 +17,30 @@ export default function VoiceCallModal({
   onEnd,
 }) {
   const { theme } = useTheme();
+
+  // Debug once to confirm received props
+  useEffect(() => {
+    console.log("VoiceCallModal props:", {
+      visible,
+      inCall,
+      displayName,
+      isMuted,
+      speakerOn,
+      remoteUid,
+    });
+  }, [visible, inCall, displayName, isMuted, speakerOn, remoteUid]);
+
+  // Safely format props (avoid crashing if they're objects or undefined)
+  const safeDisplayName =
+    typeof displayName === "object"
+      ? JSON.stringify(displayName)
+      : String(displayName ?? "");
+
+  const safeRemoteUid =
+    typeof remoteUid === "object"
+      ? JSON.stringify(remoteUid)
+      : String(remoteUid ?? "");
+
   return (
     <Modal
       visible={visible}
@@ -33,11 +58,12 @@ export default function VoiceCallModal({
           <Text style={[styles.title, { color: theme.text }]}>
             {inCall ? "In Call" : "Calling..."}
           </Text>
+
           <Text
             style={[styles.subtitle, { color: theme.secondaryText }]}
             numberOfLines={1}
           >
-            {displayName}
+            {safeDisplayName}
           </Text>
 
           <View style={styles.statusRow}>
@@ -49,8 +75,10 @@ export default function VoiceCallModal({
             />
             <Text style={{ color: theme.secondaryText }}>
               {inCall
-                ? remoteUid
-                  ? `Connected • User ${remoteUid}`
+                ? safeRemoteUid &&
+                  safeRemoteUid !== "null" &&
+                  safeRemoteUid !== ""
+                  ? `Connected • User ${safeRemoteUid}`
                   : "Connected"
                 : "Ringing"}
             </Text>

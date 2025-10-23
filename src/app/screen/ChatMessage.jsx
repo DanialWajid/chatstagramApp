@@ -399,14 +399,6 @@ const ChatMessage = () => {
         );
         return;
       }
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        interruptionModeIOS: 1,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
 
       const rec = new Audio.Recording();
       await rec.prepareToRecordAsync(
