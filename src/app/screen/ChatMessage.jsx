@@ -34,7 +34,10 @@ import {
   Mic,
   Play,
   Pause,
+  SkipBack,
+  SkipForward,
 } from "lucide-react-native";
+import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import { useTheme } from "../../store/themeContext";
@@ -187,148 +190,132 @@ const DateSeparator = ({ date }) => {
 };
 
 // lightweight audio message player component per message
-const AudioMessagePlayer = ({ uri, isMyMessage }) => {
-  const { theme } = useTheme();
-  const soundRef = useRef(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
 
-  const formatMillis = (millis) => {
-    const totalSeconds = Math.floor(millis / 1000);
-    const m = Math.floor(totalSeconds / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = Math.floor(totalSeconds % 60)
-      .toString()
-      .padStart(2, "0");
-    return `${m}:${s}`;
+function AudioMessagePlayer({ uri }) {
+  const soundRef = useRef(null);
+  const [status, setStatus] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Load sound once component mounts
+  const ensureLoaded = async () => {
+    if (soundRef.current) return;
+    try {
+      setIsLoading(true);
+      const { sound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false },
+        (s) => setStatus(s)
+      );
+      soundRef.current = sound;
+    } catch (e) {
+      console.log("Error loading sound:", e);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
+    ensureLoaded();
     return () => {
       if (soundRef.current) {
-        try {
-          soundRef.current.unloadAsync();
-        } catch {}
-        soundRef.current = null;
+        soundRef.current.unloadAsync();
       }
     };
   }, []);
 
-  const ensureLoaded = async () => {
-    if (soundRef.current) return;
-    setIsLoading(true);
-    const s = new Audio.Sound();
-    s.setOnPlaybackStatusUpdate((status) => {
-      if (!status) return;
-      if ("positionMillis" in status && "durationMillis" in status) {
-        setPosition(status.positionMillis || 0);
-        setDuration(status.durationMillis || 0);
-      }
-      if ("isPlaying" in status) {
-        setIsPlaying(status.isPlaying);
-      }
-      if (status.didJustFinish) {
-        setIsPlaying(false);
-        setPosition(status.durationMillis || 0);
-      }
-    });
-    try {
-      await s.loadAsync({ uri }, {}, true);
-    } catch (e) {
-      console.log("[v0] load sound error:", e?.message);
-      Alert.alert("Playback Error", "Unable to load audio.");
-    } finally {
-      setIsLoading(false);
-      soundRef.current = s;
+  // 🔁 Reset position once playback finishes
+  useEffect(() => {
+    if (status?.didJustFinish) {
+      soundRef.current.setPositionAsync(0);
     }
-  };
+  }, [status]);
 
+  // ▶️ / ⏸️ Toggle Play
   const togglePlay = async () => {
     await ensureLoaded();
-    if (!soundRef.current) return;
-    const status = await soundRef.current.getStatusAsync();
-    if (status.isPlaying) {
+    const s = await soundRef.current.getStatusAsync();
+    if (s.isPlaying) {
       await soundRef.current.pauseAsync();
     } else {
+      // If playback ended, reset first
+      if (s.positionMillis >= s.durationMillis) {
+        await soundRef.current.setPositionAsync(0);
+      }
       await soundRef.current.playAsync();
     }
   };
 
-  const pct =
-    duration > 0 ? Math.min(100, (position / Math.max(1, duration)) * 100) : 0;
+  // ⏪ Seek backward 5 seconds
+  const seekBackward = async () => {
+    const s = await soundRef.current.getStatusAsync();
+    if (!s.isLoaded) return;
+    const newPos = Math.max(s.positionMillis - 5000, 0);
+    await soundRef.current.setPositionAsync(newPos);
+  };
+
+  // ⏩ Seek forward 5 seconds
+  const seekForward = async () => {
+    const s = await soundRef.current.getStatusAsync();
+    if (!s.isLoaded) return;
+    const newPos = Math.min(s.positionMillis + 5000, s.durationMillis);
+    await soundRef.current.setPositionAsync(newPos);
+  };
 
   return (
-    <View
-      style={[
-        styles.audioPlayerContainer,
-        {
-          backgroundColor: isMyMessage ? "transparent" : theme.input,
-          borderColor: isMyMessage ? "rgba(255,255,255,0.35)" : theme.border,
-        },
-      ]}
-    >
-      <TouchableOpacity
-        onPress={togglePlay}
-        style={[
-          styles.audioPlayButton,
-          {
-            backgroundColor: isMyMessage ? "rgba(0,0,0,0.15)" : theme.card,
-            borderColor: isMyMessage ? "rgba(255,255,255,0.25)" : theme.border,
-          },
-        ]}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator
-            size={14}
-            color={isMyMessage ? "#fff" : theme.text}
-          />
-        ) : isPlaying ? (
-          <Pause size={16} color={isMyMessage ? "#fff" : theme.text} />
-        ) : (
-          <Play size={16} color={isMyMessage ? "#fff" : theme.text} />
-        )}
-      </TouchableOpacity>
-      <View style={styles.audioMeta}>
-        <View
-          style={[
-            styles.audioProgressTrack,
-            {
-              backgroundColor: isMyMessage
-                ? "rgba(255,255,255,0.25)"
-                : theme.border,
-            },
-          ]}
+    <View style={{ padding: 12, alignItems: "center" }}>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <TouchableOpacity onPress={seekBackward} disabled={isLoading}>
+          <SkipBack size={28} color="#555" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={togglePlay}
+          disabled={isLoading}
+          style={{ marginHorizontal: 12 }}
         >
-          <View
-            style={[
-              styles.audioProgressFill,
-              {
-                width: `${pct}%`,
-                backgroundColor: isMyMessage ? "#ffffff" : theme.accent,
-              },
-            ]}
-          />
-        </View>
-        <Text
-          style={[
-            styles.audioTimeLabel,
-            {
-              color: isMyMessage
-                ? theme.buttonText || "#fff"
-                : theme.secondaryText,
-            },
-          ]}
-        >
-          {formatMillis(position)} / {formatMillis(duration)}
-        </Text>
+          {status?.isPlaying ? (
+            <Pause size={36} color="#2196F3" />
+          ) : (
+            <Play size={36} color="#2196F3" />
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={seekForward} disabled={isLoading}>
+          <SkipForward size={28} color="#555" />
+        </TouchableOpacity>
       </View>
+
+      {/* ⏱ Slider for progress */}
+      <Slider
+        style={{ width: 250, marginTop: 10 }}
+        minimumValue={0}
+        maximumValue={status?.durationMillis || 1}
+        value={status?.positionMillis || 0}
+        onSlidingComplete={async (val) => {
+          if (soundRef.current) {
+            await soundRef.current.setPositionAsync(val);
+          }
+        }}
+        minimumTrackTintColor="#2196F3"
+        maximumTrackTintColor="#ccc"
+      />
+
+      <Text style={{ marginTop: 6, color: "#666" }}>
+        {formatTime(status?.positionMillis)} /{" "}
+        {formatTime(status?.durationMillis)}
+      </Text>
     </View>
   );
-};
+}
+
+// ⏱ Helper: format millis → mm:ss
+function formatTime(millis) {
+  if (!millis) return "0:00";
+  const totalSec = Math.floor(millis / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}:${sec.toString().padStart(2, "0")}`;
+}
 
 const ChatMessage = () => {
   const [messages, setMessages] = useState([]);
@@ -435,13 +422,21 @@ const ChatMessage = () => {
       if (!rec) return null;
 
       await rec.stopAndUnloadAsync();
+
+      // ✅ get final status after stopping
+      const status = await rec.getStatusAsync();
+      const finalDuration = status?.durationMillis || 0;
+
       const uri = rec.getURI();
       recordingRef.current = null;
+
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+
       setIsRecording(false);
+      setRecordingDuration(finalDuration); // ✅ update duration properly
 
       if (uri) {
         // get file size and set as selected file to reuse existing send flow
@@ -452,10 +447,12 @@ const ChatMessage = () => {
           name,
           type: "audio/m4a",
           size: info?.size ?? 0,
+          duration: finalDuration,
         };
         setSelectedFile(fileObj);
-        return fileObj; // return file object for quick-send
+        return fileObj;
       }
+
       return null;
     } catch (e) {
       console.log("[v0] stopVoiceRecording error:", e?.message);
