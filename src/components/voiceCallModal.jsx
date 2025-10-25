@@ -1,13 +1,22 @@
 "use client";
 
-import { Modal, Text, TouchableOpacity, View, StyleSheet } from "react-native";
-import { Mic } from "lucide-react-native";
+import {
+  Modal,
+  Text,
+  TouchableOpacity,
+  View,
+  StyleSheet,
+  Animated,
+} from "react-native";
+import { Mic, Phone, PhoneOff } from "lucide-react-native";
 import { useTheme } from "../store/themeContext";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function VoiceCallModal({
   visible,
   inCall,
+  isRinging,
+  isCalling,
   displayName,
   isMuted,
   speakerOn,
@@ -15,22 +24,31 @@ export default function VoiceCallModal({
   onToggleMute,
   onToggleSpeaker,
   onEnd,
+  onAccept,
+  onReject,
 }) {
   const { theme } = useTheme();
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Debug once to confirm received props
   useEffect(() => {
-    console.log("VoiceCallModal props:", {
-      visible,
-      inCall,
-      displayName,
-      isMuted,
-      speakerOn,
-      remoteUid,
-    });
-  }, [visible, inCall, displayName, isMuted, speakerOn, remoteUid]);
+    if (isRinging || isCalling) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }
+  }, [isRinging, isCalling]);
 
-  // Safely format props (avoid crashing if they're objects or undefined)
   const safeDisplayName =
     typeof displayName === "object"
       ? JSON.stringify(displayName)
@@ -49,14 +67,21 @@ export default function VoiceCallModal({
       onRequestClose={onEnd}
     >
       <View style={styles.backdrop}>
-        <View
+        <Animated.View
           style={[
             styles.card,
             { backgroundColor: theme.card, borderColor: theme.border },
+            (isRinging || isCalling) && { transform: [{ scale: pulseAnim }] },
           ]}
         >
           <Text style={[styles.title, { color: theme.text }]}>
-            {inCall ? "In Call" : "Calling..."}
+            {isRinging
+              ? "Incoming Call"
+              : isCalling
+              ? "Calling..."
+              : inCall
+              ? "In Call"
+              : "Calling..."}
           </Text>
 
           <Text
@@ -70,48 +95,102 @@ export default function VoiceCallModal({
             <View
               style={[
                 styles.statusDot,
-                { backgroundColor: inCall ? "#10b981" : "#f59e0b" },
+                {
+                  backgroundColor: isRinging
+                    ? "#f59e0b"
+                    : isCalling
+                    ? "#3b82f6"
+                    : inCall
+                    ? "#10b981"
+                    : "#f59e0b",
+                },
               ]}
             />
             <Text style={{ color: theme.secondaryText }}>
-              {inCall
+              {isRinging
+                ? "Ringing..."
+                : isCalling
+                ? "Calling..."
+                : inCall
                 ? safeRemoteUid &&
                   safeRemoteUid !== "null" &&
                   safeRemoteUid !== ""
                   ? `Connected • User ${safeRemoteUid}`
                   : "Connected"
-                : "Ringing"}
+                : "Calling..."}
             </Text>
           </View>
 
-          <View style={styles.controls}>
-            <TouchableOpacity
-              style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
-              onPress={onToggleMute}
-            >
-              <Mic size={24} color={theme.text} />
-              <Text style={{ color: theme.text, marginTop: 4 }}>
-                {isMuted ? "Unmute" : "Mute"}
-              </Text>
-            </TouchableOpacity>
+          {isRinging && !inCall ? (
+            <View style={styles.controls}>
+              <TouchableOpacity
+                style={[styles.acceptBtn, { backgroundColor: "#10b981" }]}
+                onPress={onAccept}
+              >
+                <Phone size={24} color="#fff" />
+                <Text
+                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
+                >
+                  Accept
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
-              onPress={onToggleSpeaker}
-            >
-              <Text style={{ color: theme.text }}>
-                {speakerOn ? "Earpiece" : "Speaker"}
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.rejectBtn, { backgroundColor: "#ef4444" }]}
+                onPress={onReject}
+              >
+                <PhoneOff size={24} color="#fff" />
+                <Text
+                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
+                >
+                  Reject
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : isCalling && !inCall ? (
+            <View style={styles.controls}>
+              <TouchableOpacity
+                style={[styles.endBtn, { backgroundColor: "#ef4444" }]}
+                onPress={onEnd}
+              >
+                <PhoneOff size={24} color="#fff" />
+                <Text
+                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
+                >
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.controls}>
+              <TouchableOpacity
+                style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
+                onPress={onToggleMute}
+              >
+                <Mic size={24} color={theme.text} />
+                <Text style={{ color: theme.text, marginTop: 4 }}>
+                  {isMuted ? "Unmute" : "Mute"}
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.endBtn, { backgroundColor: "#ef4444" }]}
-              onPress={onEnd}
-            >
-              <Text style={{ color: "#fff" }}>End</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              <TouchableOpacity
+                style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
+                onPress={onToggleSpeaker}
+              >
+                <Text style={{ color: theme.text }}>
+                  {speakerOn ? "Earpiece" : "Speaker"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.endBtn, { backgroundColor: "#ef4444" }]}
+                onPress={onEnd}
+              >
+                <Text style={{ color: "#fff" }}>End</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -147,6 +226,18 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   ctrlBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  acceptBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: "center",
+  },
+  rejectBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 10,

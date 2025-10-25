@@ -68,6 +68,79 @@ class SocketService {
     }
   }
 
+  initiateCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Initiating call:", callData);
+      this.socket.emit("call:initiate", callData);
+    }
+  }
+
+  acceptCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Accepting call:", callData);
+      this.socket.emit("call:accept", callData);
+    }
+  }
+
+  rejectCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Rejecting call:", callData);
+      this.socket.emit("call:reject", callData);
+    }
+  }
+
+  endCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Ending call:", callData);
+      this.socket.emit("call:end", callData);
+    }
+  }
+
+  onIncomingCall(callback) {
+    if (this.socket) {
+      this.socket.on("call:incoming", (data) => {
+        console.log("[v0] Incoming call event:", data);
+        callback(data);
+      });
+    }
+  }
+
+  onCallAccepted(callback) {
+    if (this.socket) {
+      this.socket.on("call:accepted", (data) => {
+        console.log("[v0] Call accepted event:", data);
+        callback(data);
+      });
+    }
+  }
+
+  onCallRejected(callback) {
+    if (this.socket) {
+      this.socket.on("call:rejected", (data) => {
+        console.log("[v0] Call rejected event:", data);
+        callback(data);
+      });
+    }
+  }
+
+  onCallEnded(callback) {
+    if (this.socket) {
+      this.socket.on("call:ended", (data) => {
+        console.log("[v0] Call ended event:", data);
+        callback(data);
+      });
+    }
+  }
+
+  offCallEvents() {
+    if (this.socket) {
+      this.socket.off("call:incoming");
+      this.socket.off("call:accepted");
+      this.socket.off("call:rejected");
+      this.socket.off("call:ended");
+    }
+  }
+
   onMessageReceived(callback) {
     if (this.socket) {
       this.socket.on("message recieved", (message) => {

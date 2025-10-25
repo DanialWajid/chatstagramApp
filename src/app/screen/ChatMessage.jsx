@@ -45,7 +45,7 @@ import AiPromptBox from "../../components/AiPromptBox";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { WebView } from "react-native-webview";
-import * as WebBrowser from "expo-web-browser"; // add WebBrowser for in-app fallback
+import * as WebBrowser from "expo-web-browser";
 import {
   createAgoraRtcEngine,
   ChannelProfileType,
@@ -60,6 +60,7 @@ import VideoMessage from "../../components/videoMessage";
 import FileMessage from "../../components/fileMessage";
 import { VoiceRecorderControls } from "../../components/voiceNotes";
 import VoiceCallModal from "../../components/voiceCallModal";
+import CallInfoMessage from "../../components/call-info-message";
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -188,30 +189,53 @@ const DateSeparator = ({ date }) => {
     </View>
   );
 };
-
-// lightweight audio message player component per message
-
-function AudioMessagePlayer({ uri }) {
+const AudioMessagePlayer = ({ uri }) => {
   const soundRef = useRef(null);
   const [status, setStatus] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
-  // Load sound once component mounts
+  const formatTime = (millis) => {
+    if (!millis) return "0:00";
+    const totalSeconds = Math.floor(millis / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+  };
+
   const ensureLoaded = async () => {
-    if (soundRef.current) return;
     try {
+      if (soundRef.current) {
+        const s = await soundRef.current.getStatusAsync();
+        if (s.isLoaded) return;
+      }
+
       setIsLoading(true);
+      setHasError(false);
+
       const { sound } = await Audio.Sound.createAsync(
         { uri },
         { shouldPlay: false },
-        (s) => setStatus(s)
+        (s) => setStatus(s),
+        true
       );
       soundRef.current = sound;
-    } catch (e) {
-      console.log("Error loading sound:", e);
+    } catch (err) {
+      console.log("[AudioPlayer] Error loading sound:", err);
+      setHasError(true);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const resetPlayer = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+    } catch {}
+    soundRef.current = null;
+    await ensureLoaded();
   };
 
   useEffect(() => {
@@ -221,50 +245,64 @@ function AudioMessagePlayer({ uri }) {
         soundRef.current.unloadAsync();
       }
     };
-  }, []);
+  }, [uri]);
 
-  // 🔁 Reset position once playback finishes
   useEffect(() => {
-    if (status?.didJustFinish) {
+    if (status?.didJustFinish && soundRef.current) {
       soundRef.current.setPositionAsync(0);
     }
   }, [status]);
 
-  // ▶️ / ⏸️ Toggle Play
   const togglePlay = async () => {
-    await ensureLoaded();
-    const s = await soundRef.current.getStatusAsync();
-    if (s.isPlaying) {
-      await soundRef.current.pauseAsync();
-    } else {
-      // If playback ended, reset first
-      if (s.positionMillis >= s.durationMillis) {
-        await soundRef.current.setPositionAsync(0);
+    try {
+      await ensureLoaded();
+      if (!soundRef.current) return;
+
+      const s = await soundRef.current.getStatusAsync();
+      if (!s.isLoaded) return await resetPlayer();
+
+      if (s.isPlaying) {
+        await soundRef.current.pauseAsync();
+      } else {
+        if (s.positionMillis >= s.durationMillis) {
+          await soundRef.current.setPositionAsync(0);
+        }
+        await soundRef.current.playAsync();
       }
-      await soundRef.current.playAsync();
+    } catch (err) {
+      console.warn("[AudioPlayer] togglePlay error:", err);
+      await resetPlayer();
     }
   };
 
-  // ⏪ Seek backward 5 seconds
-  const seekBackward = async () => {
-    const s = await soundRef.current.getStatusAsync();
-    if (!s.isLoaded) return;
-    const newPos = Math.max(s.positionMillis - 5000, 0);
-    await soundRef.current.setPositionAsync(newPos);
+  const seek = async (direction) => {
+    try {
+      if (!soundRef.current) return;
+      const s = await soundRef.current.getStatusAsync();
+      if (!s.isLoaded) return;
+
+      const delta = 5000 * (direction === "forward" ? 1 : -1);
+      const newPos = Math.min(
+        Math.max(s.positionMillis + delta, 0),
+        s.durationMillis
+      );
+      await soundRef.current.setPositionAsync(newPos);
+    } catch (err) {
+      console.warn("[AudioPlayer] seek error:", err);
+    }
   };
 
-  // ⏩ Seek forward 5 seconds
-  const seekForward = async () => {
-    const s = await soundRef.current.getStatusAsync();
-    if (!s.isLoaded) return;
-    const newPos = Math.min(s.positionMillis + 5000, s.durationMillis);
-    await soundRef.current.setPositionAsync(newPos);
-  };
+  if (hasError)
+    return (
+      <Text style={{ color: "red", padding: 8 }}>
+        Audio format not supported
+      </Text>
+    );
 
   return (
     <View style={{ padding: 12, alignItems: "center" }}>
       <View style={{ flexDirection: "row", alignItems: "center" }}>
-        <TouchableOpacity onPress={seekBackward} disabled={isLoading}>
+        <TouchableOpacity onPress={() => seek("backward")} disabled={isLoading}>
           <SkipBack size={28} color="#555" />
         </TouchableOpacity>
 
@@ -280,12 +318,11 @@ function AudioMessagePlayer({ uri }) {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={seekForward} disabled={isLoading}>
+        <TouchableOpacity onPress={() => seek("forward")} disabled={isLoading}>
           <SkipForward size={28} color="#555" />
         </TouchableOpacity>
       </View>
 
-      {/* ⏱ Slider for progress */}
       <Slider
         style={{ width: 250, marginTop: 10 }}
         minimumValue={0}
@@ -306,9 +343,8 @@ function AudioMessagePlayer({ uri }) {
       </Text>
     </View>
   );
-}
+};
 
-// ⏱ Helper: format millis → mm:ss
 function formatTime(millis) {
   if (!millis) return "0:00";
   const totalSec = Math.floor(millis / 1000);
@@ -317,7 +353,11 @@ function formatTime(millis) {
   return `${min}:${sec.toString().padStart(2, "0")}`;
 }
 
-const ChatMessage = () => {
+export default function ChatMessage({
+  user,
+  displayInfo: propDisplayInfo,
+  onNavigateToGroupSettings,
+}) {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -349,16 +389,22 @@ const ChatMessage = () => {
   });
   const [downloadingId, setDownloadingId] = useState(null);
   const [downloadedMap, setDownloadedMap] = useState({});
-  const [docWebError, setDocWebError] = useState(false); // add docWebError state for WebView error tracking
+  const [docWebError, setDocWebError] = useState(false);
+
   const [calling, setCalling] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
   const [remoteUid, setRemoteUid] = useState(null);
-  // replace RtcEngine instance with ref for the new Agora API
-  const engineRef = useRef(null);
+  const [isRinging, setIsRinging] = useState(false);
+  const [incomingCallFrom, setIncomingCallFrom] = useState(null);
+  const [callTimeout, setCallTimeout] = useState(null);
+  const [callStartTime, setCallStartTime] = useState(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [calleeInfo, setCalleeInfo] = useState(null);
+
+  const engineRef = useRef(null); // Changed from agoraEngineRef to engineRef to match error
   const agoraHandlerRef = useRef(null);
-  // Changed to useRef<any> | null
 
   const formatMillis = (millis) => {
     const totalSeconds = Math.floor(millis / 1000);
@@ -491,17 +537,17 @@ const ChatMessage = () => {
     setIsRecording(false);
   };
 
-  const { user } = useAuthStore();
+  const { user: authUser } = useAuthStore(); // Renamed to avoid conflict with the prop 'user'
   const navigation = useNavigation();
   const route = useRoute();
   const flatListRef = useRef(null);
 
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
-  const { chatId, chatData } = route.params;
   const API_URL = "http://192.168.0.110:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
+  const { chatId } = route.params;
 
   const fetchAgoraToken = async (channelName, uid = 0) => {
     try {
@@ -516,6 +562,47 @@ const ChatMessage = () => {
     }
   };
 
+  const sendCallInfoMessage = async (
+    callStatus,
+    duration = 0,
+    callerName = ""
+  ) => {
+    try {
+      const token = await SecureStore.getItemAsync("token");
+
+      const callInfoData = {
+        content: `Call ${callStatus}`,
+        chatId,
+        type: "call",
+        callStatus, // "missed", "rejected", "ended"
+        duration, // in seconds
+        callerName,
+      };
+
+      const response = await axios.post(`${API_URL}/message/`, callInfoData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const callMessage = response.data.data || response.data;
+      console.log("[v0] Call info message sent:", callMessage);
+
+      setMessages((prevMessages) => [...prevMessages, callMessage]);
+
+      if (socketConnected) {
+        SocketService.sendMessage(callMessage);
+      }
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    } catch (error) {
+      console.error("[v0] Error sending call info message:", error);
+    }
+  };
+
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);
     fetchMessages();
@@ -524,12 +611,12 @@ const ChatMessage = () => {
     return () => {
       console.log("ChatMessage component unmounting");
       cleanupSocket();
-      endVoiceCall(); // Ensure call is ended on unmount
+      endVoiceCall();
       try {
         cancelVoiceRecording();
       } catch {}
     };
-  }, [chatId, user._id]);
+  }, [chatId, authUser._id]); // Use authUser._id here
 
   const groupMessagesByDate = (messages) => {
     const grouped = [];
@@ -559,7 +646,7 @@ const ChatMessage = () => {
   const setupSocket = () => {
     console.log("Setting up socket connection...");
 
-    SocketService.connect(user._id, user.name);
+    SocketService.connect(authUser._id, authUser.name); // Use authUser._id and authUser.name
 
     const checkConnection = setInterval(() => {
       const connected = SocketService.getConnectionStatus();
@@ -591,7 +678,8 @@ const ChatMessage = () => {
 
     SocketService.onTyping((data) => {
       console.log("Typing event received:", data);
-      if (data.user._id !== user._id) {
+      if (data.user._id !== authUser._id) {
+        // Use authUser._id
         setTypingUsers((prev) => {
           const exists = prev.find((u) => u._id === data.user._id);
           if (!exists) {
@@ -607,6 +695,63 @@ const ChatMessage = () => {
       setTypingUsers((prev) => prev.filter((u) => u._id !== data.user._id));
     });
 
+    SocketService.socket?.on("call:initiate", (data) => {
+      console.log("[v0] Incoming call from:", data.from);
+
+      if (data.from._id === authUser._id) {
+        // Use authUser._id
+        console.log("[v0] Ignoring own call event");
+        return;
+      }
+
+      setIncomingCallFrom(data.from);
+      setIsRinging(true);
+
+      const timeout = setTimeout(() => {
+        console.log("[v0] Call timeout - no response");
+        setIsRinging(false);
+        setIncomingCallFrom(null);
+        Alert.alert("Missed Call", `Call from ${data.from.name} ended`);
+        sendCallInfoMessage("missed", 0, data.from.name);
+      }, 30000);
+      setCallTimeout(timeout);
+    });
+
+    SocketService.socket?.on("call:accept", (data) => {
+      console.log("[v0] Call accepted by:", data.from);
+      setCalling(false);
+      setIsRinging(false);
+      setCallStartTime(Date.now());
+      startAgoraConnection();
+    });
+
+    SocketService.socket?.on("call:reject", (data) => {
+      console.log("[v0] Call rejected by:", data.from);
+      setCalleeInfo(null);
+      setCalling(false);
+      setIsRinging(false);
+      setIncomingCallFrom(null);
+
+      // Send call rejected message
+      sendCallInfoMessage("rejected");
+
+      Alert.alert("Call Rejected", "The recipient rejected your call.");
+    });
+
+    // Socket listener for call timeout
+    SocketService.socket?.on("call:timeout", (data) => {
+      console.log("[v0] Call timed out");
+      setCalleeInfo(null);
+      setCalling(false);
+      setIsRinging(false);
+      setIncomingCallFrom(null);
+
+      // Send call missed message
+      sendCallInfoMessage("missed");
+
+      Alert.alert("Call Missed", "The recipient did not answer the call.");
+    });
+
     return () => {
       clearInterval(checkConnection);
     };
@@ -616,29 +761,57 @@ const ChatMessage = () => {
     console.log("Cleaning up socket listeners...");
     SocketService.offMessageReceived();
     SocketService.offTyping();
+    SocketService.socket?.off("call:initiate");
+    SocketService.socket?.off("call:accept");
+    SocketService.socket?.off("call:reject");
+    SocketService.socket?.off("call:end");
     SocketService.hasJoinedChat = false;
     setTypingUsers([]);
   };
 
   const fetchMessages = async () => {
     try {
-      console.log("Fetching messages for chat:", chatId);
+      console.log("[v0] Fetching messages for chat:", chatId);
+
+      if (!chatId) {
+        console.error("[v0] chatId is undefined or empty");
+        Alert.alert("Error", "Chat ID is missing");
+        return;
+      }
+
       const token = await SecureStore.getItemAsync("token");
+
+      if (!token) {
+        console.error("[v0] Token not found in secure storage");
+        Alert.alert("Error", "Authentication token missing");
+        return;
+      }
+
       setLoading(true);
 
       const response = await axios.get(`${API_URL}/message/${chatId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("Fetched", response.data.length, "messages");
+      console.log("[v0] Fetched", response.data.length, "messages");
       setMessages(response.data);
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 500);
     } catch (error) {
-      console.error("Error fetching messages:", error);
-      Alert.alert("Error", "Failed to load messages");
+      console.error("[v0] Error fetching messages:", {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+        url: error?.config?.url,
+      });
+      Alert.alert(
+        "Error",
+        `Failed to load messages: ${
+          error?.response?.data?.message || error?.message
+        }`
+      );
       setMessages([]);
     } finally {
       setLoading(false);
@@ -721,7 +894,6 @@ const ChatMessage = () => {
         )}`;
       }
 
-      // Default to Google Docs Viewer
       return `https://docs.google.com/viewer?embedded=1&url=${encodeURIComponent(
         url
       )}`;
@@ -772,7 +944,6 @@ const ChatMessage = () => {
   }, [messages]);
 
   const sendMessage = async (fileOverride) => {
-    // Treat RN TextInput onSubmitEditing event as undefined file override
     const isValidFileOverride =
       fileOverride &&
       typeof fileOverride === "object" &&
@@ -876,6 +1047,8 @@ const ChatMessage = () => {
   };
 
   const getChatDisplayInfo = () => {
+    // const chatData = route.params?.chatData; // Assuming chatData is passed via route params
+    const chatData = route.params?.chatData; // <-- Fix: Added declaration for chatData
     if (!chatData) return { name: "Chat", image: null, isGroup: false };
 
     if (chatData.isGroupChat) {
@@ -886,7 +1059,7 @@ const ChatMessage = () => {
         memberCount: chatData.users.length,
       };
     } else {
-      const otherUser = chatData.users.find((u) => u._id !== user._id);
+      const otherUser = chatData.users.find((u) => u._id !== authUser._id); // Use authUser._id
       return {
         name: otherUser?.name || "Unknown User",
         image: otherUser?.profileImage || otherUser?.pic,
@@ -896,6 +1069,7 @@ const ChatMessage = () => {
   };
 
   const navigateToGroupSettings = () => {
+    const chatData = route.params?.chatData; // <-- Fix: Added declaration for chatData
     if (chatData?.isGroupChat) {
       navigation.navigate("GroupChatSettings", {
         chatId: chatId,
@@ -994,7 +1168,6 @@ const ChatMessage = () => {
 
       if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
-        // derive a stable filename if fileName is missing
         const last = asset.uri.split("/").pop() || `image_${Date.now()}`;
         const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(last);
         const name = asset.fileName || (hasExt ? last : `${last}.jpg`);
@@ -1045,7 +1218,7 @@ const ChatMessage = () => {
   const removeSelectedFile = () => {
     setSelectedFile(null);
   };
-  //delete1
+
   const downloadFile = async (fileUrl, messageId) => {
     try {
       setDownloadingId(messageId);
@@ -1065,7 +1238,8 @@ const ChatMessage = () => {
 
   const MessageBubble = ({ item }) => {
     const { theme } = useTheme();
-    const isMyMessage = item.sender._id === user._id;
+    const isMyMessage = item.sender._id === authUser._id; // Use authUser._id
+    const isCallInfoMessage = item.type === "call";
     const isFileMessage = item.type === "file" && item.fileUrl;
     const msgKey = getMessageKey(item);
     const localInfo = downloadedMap[msgKey];
@@ -1087,7 +1261,7 @@ const ChatMessage = () => {
           fromMe: isMyMessage,
         });
       } else {
-        setDocWebError(false); // reset error before showing doc preview
+        setDocWebError(false);
         setDocPreview({
           visible: true,
           url: item.fileUrl,
@@ -1162,11 +1336,12 @@ const ChatMessage = () => {
           isMyMessage ? styles.myMessageWrapper : styles.theirMessageWrapper,
         ]}
       >
-        {!isMyMessage && chatData?.isGroupChat && (
-          <Text style={[styles.senderName, { color: theme.secondaryText }]}>
-            {item.sender.name}
-          </Text>
-        )}
+        {!isMyMessage &&
+          route.params?.chatData?.isGroupChat && ( // <-- Fix: Use route.params?.chatData to access isGroupChat
+            <Text style={[styles.senderName, { color: theme.secondaryText }]}>
+              {item.sender.name}
+            </Text>
+          )}
 
         <View
           style={[
@@ -1176,7 +1351,9 @@ const ChatMessage = () => {
               : [styles.theirMessageBubble, { backgroundColor: theme.input }],
           ]}
         >
-          {isFileMessage ? (
+          {isCallInfoMessage ? (
+            <CallInfoMessage item={item} isMyMessage={isMyMessage} />
+          ) : isFileMessage ? (
             <TouchableOpacity
               onPress={openPreview}
               style={styles.fileContainer}
@@ -1189,7 +1366,6 @@ const ChatMessage = () => {
                     style={styles.imageMessage}
                     resizeMode="cover"
                   />
-                  {/* Removed filename display for images */}
 
                   {item.content && (
                     <Text
@@ -1262,7 +1438,6 @@ const ChatMessage = () => {
                   </View>
                 </View>
               ) : isAudioFile(item.fileType, item.fileUrl) ? (
-                // Use the new AudioMessagePlayer component for audio files
                 <AudioMessagePlayer
                   uri={item.fileUrl}
                   isMyMessage={isMyMessage}
@@ -1342,7 +1517,6 @@ const ChatMessage = () => {
     return <MessageBubble item={item} />;
   };
 
-  const displayInfo = getChatDisplayInfo();
   const groupedMessages = groupMessagesByDate(messages);
 
   const { theme } = useTheme();
@@ -1433,8 +1607,7 @@ const ChatMessage = () => {
     },
   };
 
-  // voice call helpers
-  const requestMicPermission = async () => {
+  const requestMicrophonePermission = async () => {
     const { status } = await Audio.requestPermissionsAsync();
     if (status !== "granted") {
       Alert.alert(
@@ -1446,9 +1619,37 @@ const ChatMessage = () => {
     return true;
   };
 
-  const startVoiceCall = async () => {
+  const initiateVoiceCall = async () => {
     try {
-      // robust join: use Communication profile, enable audio, route to speaker, handle token renewals
+      const micOk = await requestMicrophonePermission();
+      if (!micOk) return;
+
+      setCalling(true);
+
+      const chatData = route.params?.chatData;
+      const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+      setCalleeInfo(otherUser);
+
+      // Emit call initiation event to other user
+      SocketService.socket?.emit("call:initiate", {
+        to: otherUser?._id,
+        from: {
+          _id: authUser._id,
+          name: authUser.name,
+        },
+        chatId,
+      });
+
+      console.log("[v0] Call initiated to:", otherUser?.name);
+    } catch (e) {
+      console.log("[v0] initiateVoiceCall error:", e.message);
+      Alert.alert("Call Failed", "Unable to initiate the call.");
+      setCalling(false);
+    }
+  };
+
+  const startAgoraConnection = async () => {
+    try {
       if (!AGORA_APP_ID) {
         Alert.alert(
           "Missing config",
@@ -1456,12 +1657,7 @@ const ChatMessage = () => {
         );
         return;
       }
-      const micOk = await requestMicPermission();
-      if (!micOk) return;
 
-      setCalling(true);
-
-      // get token
       const token = await fetchAgoraToken(chatId, 0);
       if (!token) {
         setCalling(false);
@@ -1469,29 +1665,23 @@ const ChatMessage = () => {
         return;
       }
 
-      // reuse engine if exists, otherwise create
       let engine = engineRef.current;
       if (!engine) {
         engine = createAgoraRtcEngine();
         engineRef.current = engine;
         engine.initialize({
           appId: AGORA_APP_ID,
-          // Use Communication for 1:1/Group calls to avoid broadcaster/audience role drops
           channelProfile: ChannelProfileType.ChannelProfileCommunication,
         });
-        // communication doesn't require roles, but it's harmless to set
         engine.setClientRole(ClientRoleType.ClientRoleBroadcaster);
         engine.setAudioProfile(
           AudioProfileType.AudioProfileDefault,
           AudioScenarioType.AudioScenarioCommunication
         );
 
-        // ensure audio is active and routed to speaker by default
-        // (some platforms default to earpiece unless specified)
         try {
           engine.enableAudio && engine.enableAudio();
           engine.enableLocalAudio && engine.enableLocalAudio(true);
-          // Set default route to speakerphone
           if (typeof engine.setDefaultAudioRouteToSpeakerphone === "function") {
             engine.setDefaultAudioRouteToSpeakerphone(true);
           }
@@ -1500,7 +1690,6 @@ const ChatMessage = () => {
         }
       }
 
-      // unregister previous handler (if any) to avoid duplicate callbacks
       if (
         agoraHandlerRef.current &&
         typeof engine.unregisterEventHandler === "function"
@@ -1514,6 +1703,7 @@ const ChatMessage = () => {
         onJoinChannelSuccess: () => {
           setInCall(true);
           setCalling(false);
+          setCallStartTime(Date.now());
         },
         onUserJoined: (uid) => {
           setRemoteUid(uid);
@@ -1523,9 +1713,7 @@ const ChatMessage = () => {
         },
         onError: (err) => {
           console.log("[v0] Agora Error:", err);
-          // avoid immediate teardown on ephemeral errors; let connection state handle it
         },
-        // auto-renew token before expiry to prevent drops
         onTokenPrivilegeWillExpire: async () => {
           try {
             const newToken = await fetchAgoraToken(chatId, 0);
@@ -1536,9 +1724,7 @@ const ChatMessage = () => {
             console.log("[v0] renew token error:", e.message);
           }
         },
-        // monitor connection state for unexpected drops and try renewing token
         onConnectionStateChanged: async (state, reason) => {
-          // If token expired or rejected, renew and keep the session alive
           if (
             reason ===
               ConnectionChangedReasonType.ConnectionChangedRejectedByServer ||
@@ -1556,7 +1742,6 @@ const ChatMessage = () => {
             }
           }
 
-          // If truly disconnected and not user-triggered, keep modal open; user can decide to End, or it may reconnect via token renew
           if (state === ConnectionStateType.ConnectionStateDisconnected) {
             console.log("[v0] Agora disconnected (reason:", reason, ")");
           }
@@ -1565,46 +1750,99 @@ const ChatMessage = () => {
       engine.registerEventHandler(handler);
       agoraHandlerRef.current = handler;
 
-      // join channel
       engine.joinChannel(token, String(chatId), 0, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
       });
     } catch (e) {
-      console.log("[v0] startVoiceCall error:", e.message);
-      Alert.alert("Call Failed", "Unable to start the call.");
+      console.log("[v0] startAgoraConnection error:", e.message);
+      Alert.alert("Call Failed", "Unable to connect to call.");
       setCalling(false);
     }
   };
 
+  const acceptIncomingCall = async () => {
+    try {
+      if (callTimeout) {
+        clearTimeout(callTimeout);
+        setCallTimeout(null);
+      }
+
+      setIsRinging(false);
+
+      // Notify caller of acceptance
+      SocketService.socket?.emit("call:accept", {
+        to: incomingCallFrom?._id,
+        from: {
+          _id: authUser._id,
+          name: authUser.name,
+        },
+        chatId,
+      });
+
+      // Start Agora connection
+      await startAgoraConnection();
+    } catch (e) {
+      console.log("[v0] acceptIncomingCall error:", e.message);
+      Alert.alert("Error", "Failed to accept call");
+    }
+  };
+
+  const rejectIncomingCall = () => {
+    setCalleeInfo(null);
+    setIsRinging(false);
+    setIncomingCallFrom(null);
+
+    // Send call rejected message
+    sendCallInfoMessage("rejected");
+
+    // Emit rejection event
+    const chatData = route.params?.chatData;
+    const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+    SocketService.socket?.emit("call:reject", {
+      to: otherUser?._id,
+      from: authUser._id,
+      chatId,
+    });
+
+    console.log("[v0] Call rejected");
+  };
+
   const endVoiceCall = async () => {
     try {
-      const engine = engineRef.current;
-      if (engine) {
-        try {
-          await engine.leaveChannel();
-        } catch {}
-        try {
-          if (
-            agoraHandlerRef.current &&
-            typeof engine.unregisterEventHandler === "function"
-          ) {
-            engine.unregisterEventHandler(agoraHandlerRef.current);
-          }
-        } catch {}
-        try {
-          engine.release && engine.release();
-        } catch {}
-        engineRef.current = null;
-        agoraHandlerRef.current = null;
-      }
-    } catch (e) {
-      console.log("[v0] endVoiceCall error:", e?.message);
-    } finally {
-      setIsMuted(false);
-      setSpeakerOn(false);
-      setRemoteUid(null);
-      setInCall(false);
+      setCalleeInfo(null);
       setCalling(false);
+      setInCall(false);
+      setIsRinging(false);
+      setIncomingCallFrom(null);
+      setRemoteUid(null);
+
+      if (callStartTime) {
+        const duration = Math.floor((Date.now() - callStartTime) / 1000);
+        setCallDuration(duration);
+
+        // Send call ended message
+        await sendCallInfoMessage("ended", duration);
+      }
+
+      if (engineRef.current) {
+        // Changed from agoraEngineRef.current to engineRef.current
+        await engineRef.current.leaveChannel();
+        await engineRef.current.release();
+        engineRef.current = null;
+      }
+
+      // Emit call end event
+      const chatData = route.params?.chatData;
+      const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+      SocketService.socket?.emit("call:end", {
+        to: otherUser?._id,
+        from: authUser._id,
+        chatId,
+      });
+
+      console.log("[v0] Call ended");
+    } catch (e) {
+      console.log("[v0] endVoiceCall error:", e.message);
     }
   };
 
@@ -1613,7 +1851,6 @@ const ChatMessage = () => {
       const engine = engineRef.current;
       if (!engine) return;
       const next = !isMuted;
-      // use muteLocalAudioStream for v4 API
       await engine.muteLocalAudioStream(next);
       setIsMuted(next);
     } catch (e) {
@@ -1651,6 +1888,8 @@ const ChatMessage = () => {
       </View>
     );
   }
+
+  const displayInfo = getChatDisplayInfo(); // Define displayInfo here
 
   return (
     <KeyboardAvoidingView
@@ -1730,13 +1969,15 @@ const ChatMessage = () => {
           )}
           <TouchableOpacity
             style={styles.settingsButton}
-            onPress={startVoiceCall}
-            disabled={calling || inCall}
+            onPress={initiateVoiceCall}
+            disabled={calling || inCall || isRinging}
           >
             <Phone
               size={20}
               color={
-                calling || inCall ? theme.secondaryText : theme.secondaryText
+                calling || inCall || isRinging
+                  ? theme.secondaryText
+                  : theme.secondaryText
               }
             />
           </TouchableOpacity>
@@ -1996,7 +2237,7 @@ const ChatMessage = () => {
                       Alert.alert("Downloaded", "Saved to app documents");
                     }
                   } catch (e) {
-                    console.error("[v0] video preview download error:", e);
+                    console.error("[v0] spreview download error:", e);
                     Alert.alert("Error", "Failed to download video");
                   } finally {
                     setDownloadingId(null);
@@ -2049,7 +2290,7 @@ const ChatMessage = () => {
                     }}
                   >
                     <Text style={{ color: "#6b7280", textAlign: "center" }}>
-                      We couldn’t display this file in the viewer.
+                      We couldn't display this file in the viewer.
                     </Text>
                     <TouchableOpacity
                       onPress={() =>
@@ -2078,7 +2319,7 @@ const ChatMessage = () => {
                     domStorageEnabled
                     allowFileAccess
                     allowUniversalAccessFromFileURLs
-                    mixedContentMode="always" // Android: allow https<->http assets if any
+                    mixedContentMode="always"
                     startInLoadingState
                     renderLoading={() => (
                       <View
@@ -2183,15 +2424,21 @@ const ChatMessage = () => {
       </Modal>
 
       <VoiceCallModal
-        visible={calling || inCall}
+        visible={calling || (incomingCallFrom && isRinging) || inCall}
         inCall={inCall}
-        displayName={displayInfo?.name}
+        isRinging={isRinging && incomingCallFrom !== null}
+        isCalling={calling && !inCall && !incomingCallFrom}
+        displayName={
+          incomingCallFrom?.name || calleeInfo?.name || displayInfo?.name
+        }
         isMuted={isMuted}
         speakerOn={speakerOn}
         remoteUid={remoteUid}
         onToggleMute={toggleMute}
         onToggleSpeaker={toggleSpeaker}
         onEnd={endVoiceCall}
+        onAccept={acceptIncomingCall}
+        onReject={rejectIncomingCall}
       />
 
       {selectedFile && (
@@ -2318,7 +2565,7 @@ const ChatMessage = () => {
       </View>
     </KeyboardAvoidingView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   backButton: {
@@ -2709,7 +2956,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 14,
   },
-  // Call UI
   callModalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",
@@ -2764,7 +3010,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: "center",
   },
-  // Voice Recording Styles
   recordingIndicator: {
     flex: 1,
     flexDirection: "row",
@@ -2794,14 +3039,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginLeft: 8,
   },
-  // Audio Player Styles
   audioPlayerContainer: {
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    width: 260, // Fixed width for audio messages
+    width: 260,
   },
   audioPlayButton: {
     width: 40,
@@ -2831,5 +3075,3 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 });
-
-export default ChatMessage;
