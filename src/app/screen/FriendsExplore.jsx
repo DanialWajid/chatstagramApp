@@ -11,12 +11,12 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  ScrollView,
 } from "react-native";
 import axios from "axios";
 import UserCard from "../../components/UserCard";
 import { Search, UserPlus } from "lucide-react-native";
 import { useTheme } from "../../store/themeContext";
-import { LinearGradient } from "expo-linear-gradient";
 
 const FriendsExplore = () => {
   const [potentialFriends, setPotentialFriends] = useState([]);
@@ -31,7 +31,7 @@ const FriendsExplore = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.110:8000";
+  const API_URL = "http://192.168.100.15:8000";
 
   useEffect(() => {
     fetchPotentialFriends();
@@ -124,142 +124,127 @@ const FriendsExplore = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Navbar />
-      <View style={styles.quickAddSection}>
-        <LinearGradient
-          colors={["#667eea", "#764ba2"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.gradientTitle}
-        >
-          <Text style={styles.sectionTitle}>Quick Add Friends</Text>
-        </LinearGradient>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={theme.card}
+          />
+        }
+      >
+        {/* Quick Add Section */}
+        <View style={styles.quickAddSection}>
+          <Text style={[styles.quickAddTitle, { color: theme.text }]}>
+            Quick Add by User ID
+          </Text>
 
-        <View style={styles.quickAddInputContainer}>
-          <View
-            style={[
-              styles.quickAddInput,
-              { backgroundColor: theme.card, borderColor: theme.border },
-            ]}
-          >
-            <TextInput
-              style={[styles.quickAddTextInput, { color: theme.text }]}
-              placeholder="Enter User ID..."
-              placeholderTextColor={theme.secondaryText}
-              value={quickAddId}
-              onChangeText={setQuickAddId}
-            />
-          </View>
-
-          <TouchableOpacity
-            style={[
-              styles.quickAddButton,
-              {
-                backgroundColor: theme.accent,
-                opacity: quickAddLoading ? 0.6 : 1,
-              },
-            ]}
-            onPress={handleQuickAdd}
-            disabled={quickAddLoading}
-          >
-            {quickAddLoading ? (
-              <ActivityIndicator size="small" color={theme.buttonText} />
-            ) : (
-              <>
-                <UserPlus size={20} color={theme.buttonText} />
-                <Text
-                  style={[
-                    styles.quickAddButtonText,
-                    { color: theme.buttonText },
-                  ]}
-                >
-                  Quick Add
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Quick Add Message */}
-        {quickAddMessage.text !== "" && (
-          <View style={styles.messageContainer}>
-            <Text
+          <View style={styles.quickAddInputContainer}>
+            <View
               style={[
-                styles.messageText,
-                {
-                  color:
-                    quickAddMessage.type === "success" ? "#10b981" : "#ef4444",
-                },
+                styles.quickAddInput,
+                { backgroundColor: theme.card, borderColor: theme.border },
               ]}
             >
-              {quickAddMessage.text}
-            </Text>
+              <TextInput
+                style={[styles.quickAddTextInput, { color: theme.text }]}
+                placeholder="Enter User ID..."
+                placeholderTextColor={theme.secondaryText}
+                value={quickAddId}
+                onChangeText={setQuickAddId}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.quickAddButton,
+                {
+                  backgroundColor: theme.accent,
+                  opacity: quickAddLoading ? 0.6 : 1,
+                },
+              ]}
+              onPress={handleQuickAdd}
+              disabled={quickAddLoading}
+            >
+              {quickAddLoading ? (
+                <ActivityIndicator size="small" color={theme.buttonText} />
+              ) : (
+                <UserPlus size={22} color={theme.buttonText} />
+              )}
+            </TouchableOpacity>
           </View>
-        )}
-      </View>
 
-      {/* Explore Friends Section */}
-      <View style={styles.exploreFriendsSection}>
-        <LinearGradient
-          colors={["#667eea", "#764ba2"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.gradientTitle}
-        >
-          <Text style={styles.sectionTitle}>Explore Friends</Text>
-        </LinearGradient>
-      </View>
-      {/* Search Bar */}
-      <View
-        style={[
-          styles.searchContainer,
-          { backgroundColor: theme.card, borderColor: theme.border },
-        ]}
-      >
-        <Search
-          size={20}
-          color={theme.secondaryText}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search by name..."
-          placeholderTextColor={theme.secondaryText}
-          value={searchTerm}
-          onChangeText={handleSearchChange}
-        />
-      </View>
-
-      {/* Friends List */}
-      {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.accent} />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredFriends}
-          renderItem={renderFriendItem}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
-                {searchTerm
-                  ? "No friends match your search."
-                  : "No potential friends found."}
+          {/* Quick Add Message */}
+          {quickAddMessage.text !== "" && (
+            <View style={styles.messageContainer}>
+              <Text
+                style={[
+                  styles.messageText,
+                  {
+                    color:
+                      quickAddMessage.type === "success"
+                        ? "#10b981"
+                        : "#ef4444",
+                  },
+                ]}
+              >
+                {quickAddMessage.text}
               </Text>
             </View>
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[theme.accent]}
-              tintColor={theme.accent}
-              progressBackgroundColor={theme.card}
+          )}
+        </View>
+
+        {/* Search Bar */}
+        <View
+          style={[
+            styles.searchContainer,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
+        >
+          <Search
+            size={20}
+            color={theme.secondaryText}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search by name..."
+            placeholderTextColor={theme.secondaryText}
+            value={searchTerm}
+            onChangeText={handleSearchChange}
+          />
+        </View>
+
+        {/* Friends List */}
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.accent} />
+          </View>
+        ) : filteredFriends.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+              {searchTerm
+                ? "No connection match your search."
+                : "No potential connection found."}
+            </Text>
+          </View>
+        ) : (
+          filteredFriends.map((item) => (
+            <UserCard
+              key={item._id}
+              cardUser={item}
+              isPrivate={item.isPrivate}
+              isFriend={false}
+              onFriendUpdate={fetchPotentialFriends}
             />
-          }
-        />
-      )}
+          ))
+        )}
+      </ScrollView>
       <SideNav />
     </View>
   );
@@ -268,116 +253,101 @@ const FriendsExplore = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingBottom: 70,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
+    paddingTop: 95,
+    paddingHorizontal: 16,
+    paddingBottom: 150,
   },
   quickAddSection: {
-    marginTop: 16,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "rgba(102, 126, 234, 0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(102, 126, 234, 0.2)",
   },
-  exploreFriendsSection: {
-    marginHorizontal: 16,
-    marginBottom: 8,
-  },
-  gradientTitle: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
+  quickAddTitle: {
+    fontSize: 16,
+    fontWeight: "600",
     marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#ffffff",
-    textAlign: "center",
   },
   quickAddInputContainer: {
     flexDirection: "row",
-    gap: 8,
+    gap: 10,
     alignItems: "center",
   },
   quickAddInput: {
     flex: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 50,
     borderWidth: 1,
     justifyContent: "center",
   },
   quickAddTextInput: {
-    fontSize: 16,
+    fontSize: 15,
     height: "100%",
   },
   quickAddButton: {
-    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    height: 48,
-    minWidth: 120,
+    borderRadius: 10,
+    height: 50,
+    width: 50,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
-    elevation: 3,
-  },
-  quickAddButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
+    elevation: 4,
   },
   messageContainer: {
-    marginTop: 8,
-    paddingHorizontal: 4,
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.05)",
   },
   messageText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
     textAlign: "center",
   },
   searchContainer: {
-    marginTop: 16,
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
+    marginBottom: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 50,
     borderWidth: 1,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     height: "100%",
-    fontSize: 16,
+    fontSize: 15,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  listContainer: {
-    flexGrow: 1,
-    padding: 16,
+    paddingVertical: 40,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+    paddingVertical: 40,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: "center",
   },
 });

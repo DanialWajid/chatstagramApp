@@ -121,7 +121,7 @@ const Profile = () => {
     }
   };
   const handleCopyUserId = () => {
-    Clipboard.setString(userId);
+    Clipboard.setString(user._id); // Copy full ID
     setShowCopySuccess(true);
     setTimeout(() => {
       setShowCopySuccess(false);
@@ -131,11 +131,13 @@ const Profile = () => {
   if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <Navbar />
         <ActivityIndicator
           size="large"
           color={theme.accent}
           style={styles.loadingIndicator}
         />
+        <SideNav />
       </View>
     );
   }
@@ -144,20 +146,8 @@ const Profile = () => {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Navbar />
 
-      {/* Header with Back Button */}
-      <View style={[styles.header, { backgroundColor: theme.card }]}>
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: theme.input }]}
-          onPress={() => navigation.goBack()}
-        >
-          <ArrowLeft size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
-        <View style={styles.headerPlaceholder} />
-      </View>
-
       <ScrollView
-        style={styles.scrollView}
+        style={{ ...styles.scrollView, paddingTop: 95 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -211,8 +201,12 @@ const Profile = () => {
                   >
                     User ID:
                   </Text>
-                  <Text style={[styles.userIdText, { color: theme.text }]}>
-                    {userId}
+                  <Text
+                    style={[styles.userIdText, { color: theme.text }]}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
+                    {user._id}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -235,41 +229,27 @@ const Profile = () => {
 
             {/* Stats Row */}
             <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: theme.text }]}>
-                  {stats.postsCount || 0}
-                </Text>
-                <Text
-                  style={[styles.statLabel, { color: theme.secondaryText }]}
-                >
-                  Posts
-                </Text>
-              </View>
-
               <TouchableOpacity
-                style={styles.statItem}
+                style={[
+                  styles.statItem,
+                  {
+                    backgroundColor: "#8B7355",
+                    paddingVertical: 12,
+                    paddingHorizontal: 20,
+                    borderRadius: 12,
+                  },
+                ]}
                 onPress={() => setShowFriendsModal(true)}
               >
-                <Text style={[styles.statValue, { color: theme.text }]}>
-                  {stats.friendsCount || 0}
-                </Text>
                 <Text
-                  style={[styles.statLabel, { color: theme.secondaryText }]}
+                  style={[
+                    styles.statLabel,
+                    { color: "#ffffff", fontSize: 16, fontWeight: "600" },
+                  ]}
                 >
-                  Friends
+                  Connections: {stats.friendsCount || 0}
                 </Text>
               </TouchableOpacity>
-
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: theme.text }]}>
-                  {stats.likesCount || 0}
-                </Text>
-                <Text
-                  style={[styles.statLabel, { color: theme.secondaryText }]}
-                >
-                  Likes
-                </Text>
-              </View>
             </View>
           </View>
         </View>
@@ -317,7 +297,7 @@ const Profile = () => {
         {/* Protected Content */}
         <FriendProtectedContent
           userId={id}
-          fallbackMessage="Only friends can view this user's posts and friends list"
+          fallbackMessage="Only connections can view this user's connections list"
         />
 
         {/* Modals */}
@@ -406,7 +386,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 12,
-    paddingTop: 50,
+    paddingTop: 95,
   },
   backButton: {
     width: 40,
@@ -487,6 +467,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
     gap: 6,
+    maxWidth: 250,
   },
   userIdLabel: {
     fontSize: 13,
@@ -496,6 +477,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
     fontFamily: "monospace",
+    flex: 1,
   },
   copyButton: {
     width: 40,
@@ -520,13 +502,13 @@ const styles = StyleSheet.create({
   },
   statsContainer: {
     flexDirection: "row",
-    justifyContent: "space-around",
+    justifyContent: "center",
+    alignItems: "center",
     width: "100%",
     marginTop: 16,
   },
   statItem: {
     alignItems: "center",
-    paddingHorizontal: 16,
   },
   statValue: {
     fontSize: 20,

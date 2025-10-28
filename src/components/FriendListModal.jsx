@@ -27,7 +27,7 @@ const FriendsListModal = ({ isOpen, onClose, userId }) => {
   const navigation = useNavigation();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.110:8000/";
+  const API_URL = "http://192.168.100.15:8000/";
 
   useEffect(() => {
     if (isOpen) {
@@ -214,8 +214,8 @@ const FriendsListModal = ({ isOpen, onClose, userId }) => {
                     style={[styles.emptyText, { color: theme.secondaryText }]}
                   >
                     {userId === user._id
-                      ? "You don't have any friends yet"
-                      : "No other friends to show"}
+                      ? "You don't have any connections yet"
+                      : "No other connections to show"}
                   </Text>
                 }
               />

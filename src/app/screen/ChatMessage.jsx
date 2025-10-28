@@ -36,6 +36,9 @@ import {
   Pause,
   SkipBack,
   SkipForward,
+  MoreVertical,
+  Trash2,
+  FileText,
 } from "lucide-react-native";
 import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -61,6 +64,7 @@ import FileMessage from "../../components/fileMessage";
 import { VoiceRecorderControls } from "../../components/voiceNotes";
 import VoiceCallModal from "../../components/voiceCallModal";
 import CallInfoMessage from "../../components/call-info-message";
+import { handleExportChat } from "../../utils/chatMenuUtils";
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -402,6 +406,7 @@ export default function ChatMessage({
   const [callStartTime, setCallStartTime] = useState(null);
   const [callDuration, setCallDuration] = useState(0);
   const [calleeInfo, setCalleeInfo] = useState(null);
+  const [showMenuModal, setShowMenuModal] = useState(false);
 
   const engineRef = useRef(null); // Changed from agoraEngineRef to engineRef to match error
   const agoraHandlerRef = useRef(null);
@@ -544,7 +549,7 @@ export default function ChatMessage({
 
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
-  const API_URL = "http://192.168.0.110:8000/api";
+  const API_URL = "http://192.168.100.15:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
   const { chatId } = route.params;
@@ -601,6 +606,55 @@ export default function ChatMessage({
     } catch (error) {
       console.error("[v0] Error sending call info message:", error);
     }
+  };
+
+  const handleDeleteChat = async () => {
+    setShowMenuModal(false);
+    Alert.alert(
+      "Delete Chat",
+      "Are you sure you want to delete this chat? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              console.log("Deleting chat with ID:", chatId);
+              const deleteUrl = `${API_URL}/chat/${chatId}`;
+              console.log("Delete URL:", deleteUrl);
+
+              const token = await SecureStore.getItemAsync("token");
+              console.log("Token present:", !!token);
+
+              const response = await axios.delete(deleteUrl, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+
+              console.log("Delete response:", response.data);
+              Alert.alert("Success", "Chat deleted successfully");
+              navigation.navigate("Home");
+            } catch (error) {
+              console.error("Delete chat error:", error);
+              console.error("Error details:", {
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data,
+              });
+              Alert.alert("Error", "Failed to delete chat. Please try again.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleExportChatPress = () => {
+    const getChatDisplayInfo = () => displayInfo;
+    handleExportChat(messages, authUser, getChatDisplayInfo, setShowMenuModal);
   };
 
   useEffect(() => {
@@ -1054,7 +1108,7 @@ export default function ChatMessage({
     if (chatData.isGroupChat) {
       return {
         name: chatData.chatName,
-        image: null,
+        image: chatData.groupProfilePic || null,
         isGroup: true,
         memberCount: chatData.users.length,
       };
@@ -1899,22 +1953,20 @@ export default function ChatMessage({
     >
       <View style={dynamicStyles.header}>
         <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.navigate("Home")}
-        >
-          <Text style={{ fontSize: 24, fontWeight: "bold", color: theme.text }}>
-            ←
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={styles.headerUserInfo}
           onPress={displayInfo.isGroup ? navigateToGroupSettings : undefined}
         >
           {displayInfo.isGroup ? (
-            <View style={dynamicStyles.groupHeaderAvatar}>
-              <Users size={20} color={theme.accent} />
-            </View>
+            displayInfo.image ? (
+              <Image
+                source={{ uri: displayInfo.image }}
+                style={styles.headerAvatar}
+              />
+            ) : (
+              <View style={dynamicStyles.groupHeaderAvatar}>
+                <Users size={20} color={theme.accent} />
+              </View>
+            )
           ) : displayInfo.image ? (
             <Image
               source={{ uri: displayInfo.image }}
@@ -1930,7 +1982,6 @@ export default function ChatMessage({
               style={{
                 fontSize: 18,
                 fontWeight: "600",
-                textAlign: "center",
                 color: theme.text,
               }}
             >
@@ -1949,37 +2000,33 @@ export default function ChatMessage({
               )}
             </Text>
             {socketConnected && (
-              <Text
-                style={{ fontSize: 12, color: "#10b981", textAlign: "center" }}
-              >
-                Online
-              </Text>
+              <Text style={{ fontSize: 12, color: "#10b981" }}>Online</Text>
             )}
           </View>
         </TouchableOpacity>
 
         <View style={styles.headerActions}>
-          {displayInfo.isGroup && (
+          {!displayInfo.isGroup && (
             <TouchableOpacity
               style={styles.settingsButton}
-              onPress={navigateToGroupSettings}
+              onPress={initiateVoiceCall}
+              disabled={calling || inCall || isRinging}
             >
-              <Settings size={20} color={theme.secondaryText} />
+              <Phone
+                size={20}
+                color={
+                  calling || inCall || isRinging
+                    ? theme.secondaryText
+                    : theme.secondaryText
+                }
+              />
             </TouchableOpacity>
           )}
           <TouchableOpacity
             style={styles.settingsButton}
-            onPress={initiateVoiceCall}
-            disabled={calling || inCall || isRinging}
+            onPress={() => setShowMenuModal(true)}
           >
-            <Phone
-              size={20}
-              color={
-                calling || inCall || isRinging
-                  ? theme.secondaryText
-                  : theme.secondaryText
-              }
-            />
+            <MoreVertical size={20} color={theme.secondaryText} />
           </TouchableOpacity>
           <View
             style={[
@@ -2441,6 +2488,46 @@ export default function ChatMessage({
         onReject={rejectIncomingCall}
       />
 
+      {/* Chat Menu Modal */}
+      <Modal
+        visible={showMenuModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMenuModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuModalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowMenuModal(false)}
+        >
+          <View
+            style={[
+              styles.menuModalContent,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            <TouchableOpacity
+              style={[styles.menuOption, { borderBottomColor: theme.border }]}
+              onPress={handleExportChatPress}
+            >
+              <FileText size={20} color={theme.text} />
+              <Text style={[styles.menuOptionText, { color: theme.text }]}>
+                Export Chat
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuOption}
+              onPress={handleDeleteChat}
+            >
+              <Trash2 size={20} color="#ef4444" />
+              <Text style={[styles.menuOptionText, { color: "#ef4444" }]}>
+                Delete Chat
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {selectedFile && (
         <View
           style={[
@@ -2505,9 +2592,7 @@ export default function ChatMessage({
             style={[dynamicStyles.textInput, { marginLeft: 8 }]}
             value={newMessage}
             onChangeText={handleTyping}
-            placeholder={`Message ${
-              displayInfo.isGroup ? displayInfo.name : displayInfo.name
-            }...`}
+            placeholder={`Message...`}
             placeholderTextColor={theme.secondaryText}
             multiline
             maxLength={500}
@@ -2576,11 +2661,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    justifyContent: "center",
     marginHorizontal: 16,
   },
   headerTextContainer: {
-    alignItems: "center",
     marginLeft: 8,
   },
   headerAvatar: {
@@ -3073,5 +3156,28 @@ const styles = StyleSheet.create({
   audioTimeLabel: {
     fontSize: 11,
     marginTop: 4,
+  },
+  menuModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  menuModalContent: {
+    width: "80%",
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  menuOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+  },
+  menuOptionText: {
+    fontSize: 16,
+    marginLeft: 12,
+    fontWeight: "500",
   },
 });

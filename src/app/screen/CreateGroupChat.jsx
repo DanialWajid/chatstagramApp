@@ -11,6 +11,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
@@ -18,6 +19,9 @@ import { useAuthStore } from "../../store/authStore";
 import { useTheme } from "../../store/themeContext";
 import { User, Users, Check, X, Plus, AlertCircle } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
+import * as ImagePicker from "expo-image-picker";
+import Navbar from "../../components/Navbar";
+import SideNav from "../../components/SideNav";
 
 const CreateGroupChat = () => {
   const [friends, setFriends] = useState([]);
@@ -29,8 +33,9 @@ const CreateGroupChat = () => {
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const navigation = useNavigation();
+  const [groupImage, setGroupImage] = useState(null);
 
-  const API_URL = "http://192.168.0.110:8000/api";
+  const API_URL = "http://192.168.100.15:8000/api";
 
   useEffect(() => {
     fetchFriends();
@@ -95,6 +100,18 @@ const CreateGroupChat = () => {
     setValidationError("");
     return true;
   };
+  const pickGroupImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+
+    if (!result.canceled) {
+      setGroupImage(result.assets[0]);
+    }
+  };
 
   const createGroup = async () => {
     if (!validateForm()) {
@@ -106,17 +123,23 @@ const CreateGroupChat = () => {
       const token = await SecureStore.getItemAsync("token");
 
       const userIds = selectedFriends.map((friend) => friend._id);
+      const formData = new FormData();
+      formData.append("name", groupName.trim());
+      formData.append("users", JSON.stringify(userIds));
+      if (groupImage) {
+        formData.append("groupProfilePic", {
+          uri: groupImage.uri,
+          type: groupImage.type || "image/jpeg",
+          name: groupImage.fileName || "group.jpg",
+        });
+      }
 
-      const response = await axios.post(
-        `${API_URL}/chat/group`,
-        {
-          name: groupName.trim(),
-          users: JSON.stringify(userIds),
+      const response = await axios.post(`${API_URL}/chat/group`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
         },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      });
 
       const createdGroup = response.data;
 
@@ -166,6 +189,7 @@ const CreateGroupChat = () => {
       flexDirection: "row",
       alignItems: "center",
       padding: 16,
+      paddingTop: 95, // Add space for navbar
       borderBottomWidth: 1,
       borderBottomColor: theme.border,
       backgroundColor: theme.card,
@@ -363,7 +387,7 @@ const CreateGroupChat = () => {
       <View style={dynamicStyles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.accent} />
         <Text style={[styles.loadingText, { color: theme.secondaryText }]}>
-          Loading friends...
+          Loading connections...
         </Text>
       </View>
     );
@@ -371,22 +395,58 @@ const CreateGroupChat = () => {
 
   const isFormValid = groupName.trim() && selectedFriends.length >= 2;
 
-  return (
-    <KeyboardAvoidingView
-      style={dynamicStyles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      {/* Header */}
-      <View style={dynamicStyles.header}>
+  const renderListHeader = () => (
+    <>
+      {/* Validation Error */}
+      {renderValidationError()}
+
+      {/* Group Name Input + Group Image Picker + Create Button */}
+      <View style={dynamicStyles.groupNameSection}>
         <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          style={[dynamicStyles.groupIconContainer, { position: "relative" }]}
+          onPress={pickGroupImage}
         >
-          <Text style={[styles.backButtonText, { color: theme.text }]}>←</Text>
+          {groupImage ? (
+            <Image
+              source={{ uri: groupImage.uri }}
+              style={{ width: 40, height: 40, borderRadius: 20 }}
+            />
+          ) : (
+            <Users size={24} color={theme.accent} />
+          )}
+
+          {/* image upload icon*/}
+          <View
+            style={{
+              position: "absolute",
+              bottom: -2,
+              right: -2,
+              backgroundColor: theme.accent,
+              borderRadius: 10,
+              padding: 2,
+              borderWidth: 1,
+              borderColor: theme.background,
+            }}
+          >
+            <Plus size={12} color="#fff" />
+          </View>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>
-          Create Group
-        </Text>
+
+        <TextInput
+          style={[
+            dynamicStyles.groupNameInput,
+            validationError &&
+              !groupName.trim() &&
+              dynamicStyles.groupNameInputError,
+          ]}
+          placeholder="Group name"
+          placeholderTextColor={theme.secondaryText}
+          value={groupName}
+          onChangeText={setGroupName}
+          maxLength={50}
+        />
+
+        {/* Create Button moved here */}
         <TouchableOpacity
           style={[
             styles.createButton,
@@ -414,29 +474,6 @@ const CreateGroupChat = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Validation Error */}
-      {renderValidationError()}
-
-      {/* Group Name Input */}
-      <View style={dynamicStyles.groupNameSection}>
-        <View style={dynamicStyles.groupIconContainer}>
-          <Users size={24} color={theme.accent} />
-        </View>
-        <TextInput
-          style={[
-            dynamicStyles.groupNameInput,
-            validationError &&
-              !groupName.trim() &&
-              dynamicStyles.groupNameInputError,
-          ]}
-          placeholder="Group name"
-          placeholderTextColor={theme.secondaryText}
-          value={groupName}
-          onChangeText={setGroupName}
-          maxLength={50}
-        />
-      </View>
-
       {/* Selected Friends */}
       {selectedFriends.length > 0 && (
         <View style={dynamicStyles.selectedSection}>
@@ -454,33 +491,43 @@ const CreateGroupChat = () => {
         </View>
       )}
 
-      {/* Friends List */}
+      {/* Section Title */}
       <View style={styles.friendsSection}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>
           Choose friends ({friends.length})
         </Text>
-        <FlatList
-          data={friends}
-          renderItem={renderFriendItem}
-          keyExtractor={(item) => item._id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.friendsList}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Users size={64} color={theme.secondaryText} />
-              <Text style={[styles.emptyTitle, { color: theme.text }]}>
-                No friends found
-              </Text>
-              <Text
-                style={[styles.emptySubtitle, { color: theme.secondaryText }]}
-              >
-                Add some friends to create a group chat
-              </Text>
-            </View>
-          }
-        />
       </View>
-    </KeyboardAvoidingView>
+    </>
+  );
+
+  return (
+    <View style={dynamicStyles.container}>
+      <Navbar title="Create Group" />
+
+      <FlatList
+        data={friends}
+        renderItem={renderFriendItem}
+        keyExtractor={(item) => item._id}
+        ListHeaderComponent={renderListHeader}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 150 }}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Users size={64} color={theme.secondaryText} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              No connections found
+            </Text>
+            <Text
+              style={[styles.emptySubtitle, { color: theme.secondaryText }]}
+            >
+              Add some connections to create a group chat
+            </Text>
+          </View>
+        }
+      />
+
+      <SideNav />
+    </View>
   );
 };
 

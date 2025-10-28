@@ -1667,10 +1667,10 @@
   dependencies:
     merge-options "^3.0.4"
 
-"@react-native-community/slider@^5.0.1":
-  version "5.0.1"
-  resolved "https://registry.npmjs.org/@react-native-community/slider/-/slider-5.0.1.tgz#478789e526af31e0660c6f49fa5c5429d8d4287b"
-  integrity sha512-K3JRWkIW4wQ79YJ6+BPZzp1SamoikxfPRw7Yw4B4PElEQmqZFrmH9M5LxvIo460/3QSrZF/wCgi3qizJt7g/iw==
+"@react-native-community/slider@^5.1.0":
+  version "5.1.0"
+  resolved "https://registry.yarnpkg.com/@react-native-community/slider/-/slider-5.1.0.tgz#e44d4c66a57732c33e625ea8471aa0a1e8c5ad1c"
+  integrity sha512-79nzA7eXPgM6UMo5ZZ/rrJu8Gai0aRctN6stBHneQYh5Qst98hYD3piY+RQHJhDuCCrpQL85YwGVU4FdDOE3cA==
 
 "@react-native-masked-view/masked-view@^0.3.2":
   version "0.3.2"
@@ -5797,7 +5797,7 @@ react-is@^19.1.0:
 
 react-native-agora@^4.5.3:
   version "4.5.3"
-  resolved "https://registry.npmjs.org/react-native-agora/-/react-native-agora-4.5.3.tgz#b087a695efdc23b984e2946371bd2995d0dc7d9b"
+  resolved "https://registry.yarnpkg.com/react-native-agora/-/react-native-agora-4.5.3.tgz#b087a695efdc23b984e2946371bd2995d0dc7d9b"
   integrity sha512-KWdgR/w5pzocxqJg/z335dIcETFbIChtnPau9q5XjucFrbmdSM9nua+nnpATMto83gE5X01FM8hvk3OeLrRK8Q==
   dependencies:
     buffer "^6.0.3"

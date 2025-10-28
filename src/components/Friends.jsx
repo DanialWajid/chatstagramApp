@@ -24,7 +24,7 @@ const Friends = () => {
   const { user } = useAuthStore();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.110:8000";
+  const API_URL = "http://192.168.100.15:8000";
 
   useEffect(() => {
     fetchData();
@@ -114,7 +114,7 @@ const Friends = () => {
               activeTab === "friends" && { color: theme.buttonText },
             ]}
           >
-            My Friends ({friends.length})
+            My connections ({friends.length})
           </Text>
         </TouchableOpacity>
 
@@ -159,7 +159,7 @@ const Friends = () => {
                   style={[styles.emptyText, { color: theme.secondaryText }]}
                 >
                   {activeTab === "friends"
-                    ? "No friends yet"
+                    ? "No connections yet"
                     : "No pending requests"}
                 </Text>
               </View>

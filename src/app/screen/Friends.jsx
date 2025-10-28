@@ -10,6 +10,7 @@ import {
   TextInput,
   RefreshControl,
   Alert,
+  ScrollView,
 } from "react-native";
 import SideNav from "../../components/SideNav";
 import Navbar from "../../components/Navbar";
@@ -22,21 +23,18 @@ import { useTheme } from "../../store/themeContext";
 const Friends = () => {
   const [friends, setFriends] = useState([]);
   const [filteredFriends, setFilteredFriends] = useState([]);
-  const [activeTab, setActiveTab] = useState("friends");
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuthStore();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.110:8000";
+  const API_URL = "http://192.168.100.15:8000";
 
   useEffect(() => {
-    if (activeTab === "friends") {
-      fetchData();
-    }
+    fetchData();
     // eslint-disable-next-line
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     if (searchTerm) {
@@ -111,89 +109,64 @@ const Friends = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Navbar />
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[
-            styles.tabButton,
-            activeTab === "friends"
-              ? [styles.activeTab, { backgroundColor: theme.accent }]
-              : styles.inactiveTab,
-          ]}
-          onPress={() => setActiveTab("friends")}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === "friends"
-                ? [styles.activeTabText, { color: theme.buttonText }]
-                : [styles.inactiveTabText, { color: theme.secondaryText }],
-            ]}
-          >
-            My Friends
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View
-        style={[
-          styles.searchContainer,
-          { backgroundColor: theme.card, borderColor: theme.border },
-        ]}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={theme.card}
+          />
+        }
       >
-        <Search
-          size={20}
-          color={theme.secondaryText}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search friends by name..."
-          placeholderTextColor={theme.secondaryText}
-          value={searchTerm}
-          onChangeText={handleSearchChange}
-        />
-      </View>
+        {/* Search Bar */}
+        <View
+          style={[
+            styles.searchContainer,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
+        >
+          <Search
+            size={20}
+            color={theme.secondaryText}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search connections by name..."
+            placeholderTextColor={theme.secondaryText}
+            value={searchTerm}
+            onChangeText={handleSearchChange}
+          />
+        </View>
 
-      {/* Content Area */}
-      <View style={styles.contentContainer}>
+        {/* Content Area */}
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={theme.accent} />
           </View>
+        ) : filteredFriends.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+              {searchTerm ? "No matching friends found" : "No friends found"}
+            </Text>
+          </View>
         ) : (
-          <FlatList
-            data={filteredFriends}
-            renderItem={renderFriendItem}
-            keyExtractor={(item) => item._id}
-            contentContainerStyle={
-              filteredFriends.length === 0
-                ? styles.emptyListContainer
-                : styles.listContainer
-            }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text
-                  style={[styles.emptyText, { color: theme.secondaryText }]}
-                >
-                  {searchTerm
-                    ? "No matching friends found"
-                    : "No friends found"}
-                </Text>
-              </View>
-            }
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={[theme.accent]}
-                tintColor={theme.accent}
-                progressBackgroundColor={theme.card}
-              />
-            }
-          />
+          filteredFriends.map((item) => (
+            <UserCard
+              key={item._id}
+              isPrivate={false}
+              cardUser={item}
+              isFriend={true}
+              onFriendUpdate={fetchData}
+            />
+          ))
         )}
-      </View>
+      </ScrollView>
       <SideNav />
     </View>
   );
@@ -202,73 +175,46 @@ const Friends = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingBottom: 70,
   },
-  tabContainer: {
-    flexDirection: "row",
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  tabButton: {
+  scrollView: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  activeTab: {},
-  inactiveTab: {
-    backgroundColor: "#4b5563",
+  content: {
+    paddingTop: 95,
+    paddingHorizontal: 16,
+    paddingBottom: 150,
   },
-  tabText: {
-    fontWeight: "600",
-    fontSize: 16,
-  },
-  activeTabText: {},
-  inactiveTabText: {},
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
+    marginBottom: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 50,
     borderWidth: 1,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     height: "100%",
-    fontSize: 16,
-  },
-  contentContainer: {
-    flex: 1,
+    fontSize: 15,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  listContainer: {
-    paddingBottom: 16,
-  },
-  emptyListContainer: {
-    flex: 1,
-    justifyContent: "center",
+    paddingVertical: 40,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+    paddingVertical: 40,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: "center",
   },
 });

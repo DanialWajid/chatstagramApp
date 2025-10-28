@@ -52,7 +52,7 @@ const CommentSection = ({ postId, userId, onCommentCountChange }) => {
     try {
       setLoading(true);
       const response = await fetch(
-        `http://192.168.0.110:8000/api/comment/${postId}`
+        `http://192.168.100.15:8000/api/comment/${postId}`
       );
       if (!response.ok) throw new Error("Failed to fetch comments");
       const data = await response.json();
@@ -79,7 +79,7 @@ const CommentSection = ({ postId, userId, onCommentCountChange }) => {
   const handleAddComment = async () => {
     try {
       const response = await fetch(
-        `http://192.168.0.110:8000/api/comment/add-comment/${postId}/${userId}`,
+        `http://192.168.100.15:8000/api/comment/add-comment/${postId}/${userId}`,
         {
           method: "POST",
           headers: {
@@ -103,7 +103,7 @@ const CommentSection = ({ postId, userId, onCommentCountChange }) => {
   const handleEditComment = async () => {
     try {
       const response = await fetch(
-        `http://192.168.0.110:8000/api/comment/edit-comment/${editingCommentId}/${userId}`,
+        `http://192.168.100.15:8000/api/comment/edit-comment/${editingCommentId}/${userId}`,
         {
           method: "POST",
           headers: {
@@ -135,7 +135,7 @@ const CommentSection = ({ postId, userId, onCommentCountChange }) => {
             text: "Remove",
             onPress: async () => {
               const response = await fetch(
-                `http://192.168.0.110:8000/api/comment/remove-comment/${commentId}/${userId}`,
+                `http://192.168.100.15:8000/api/comment/remove-comment/${commentId}/${userId}`,
                 {
                   method: "GET",
                 }
@@ -159,7 +159,7 @@ const CommentSection = ({ postId, userId, onCommentCountChange }) => {
   const startEditing = async (commentId) => {
     try {
       const response = await fetch(
-        `http://192.168.0.110:8000/api/comment/get-one/${commentId}`
+        `http://192.168.100.15:8000/api/comment/get-one/${commentId}`
       );
       if (!response.ok) throw new Error("Failed to fetch comment");
 

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  ScrollView,
 } from "react-native";
 import axios from "axios";
 import SideNav from "../../components/SideNav";
@@ -27,7 +28,7 @@ const Requests = () => {
   const { user } = useAuthStore();
   const { theme } = useTheme();
 
-  const API_URL = "http://192.168.0.110:8000";
+  const API_URL = "http://192.168.100.15:8000";
 
   useEffect(() => {
     fetchRequests();
@@ -141,76 +142,67 @@ const Requests = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Navbar />
-      <View style={styles.tabContainer}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.accent]}
+            tintColor={theme.accent}
+            progressBackgroundColor={theme.card}
+          />
+        }
+      >
+        {/* Search Bar */}
         <View
           style={[
-            styles.tabButton,
-            styles.activeTab,
-            { backgroundColor: theme.accent },
+            styles.searchContainer,
+            { backgroundColor: theme.card, borderColor: theme.border },
           ]}
         >
-          <Text
-            style={[
-              styles.tabText,
-              styles.activeTabText,
-              { color: theme.buttonText },
-            ]}
-          >
-            Friend Requests
-          </Text>
+          <Search
+            size={20}
+            color={theme.secondaryText}
+            style={styles.searchIcon}
+          />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search requests by name..."
+            placeholderTextColor={theme.secondaryText}
+            value={searchTerm}
+            onChangeText={handleSearchChange}
+          />
         </View>
-      </View>
 
-      <View
-        style={[
-          styles.searchContainer,
-          { backgroundColor: theme.card, borderColor: theme.border },
-        ]}
-      >
-        <Search
-          size={20}
-          color={theme.secondaryText}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={[styles.searchInput, { color: theme.text }]}
-          placeholder="Search requests by name..."
-          placeholderTextColor={theme.secondaryText}
-          value={searchTerm}
-          onChangeText={handleSearchChange}
-        />
-      </View>
-
-      {loading && !refreshing ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.accent} />
-        </View>
-      ) : (
-        <FlatList
-          data={filteredRequests}
-          renderItem={renderRequestItem}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
-                {searchTerm
-                  ? "No matching requests found"
-                  : "No pending requests"}
-              </Text>
-            </View>
-          }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[theme.accent]}
-              tintColor={theme.accent}
-              progressBackgroundColor={theme.card}
+        {/* Requests List */}
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={theme.accent} />
+          </View>
+        ) : filteredRequests.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: theme.secondaryText }]}>
+              {searchTerm
+                ? "No matching requests found"
+                : "No pending requests"}
+            </Text>
+          </View>
+        ) : (
+          filteredRequests.map((item) => (
+            <RequestCard
+              key={item._id}
+              request={item}
+              isSentRequest={false}
+              onApprove={() => handleRequestAction(item._id, "approve")}
+              onDecline={() => handleRequestAction(item._id, "decline")}
+              loading={loading}
             />
-          }
-        />
-      )}
+          ))
+        )}
+      </ScrollView>
       <SideNav />
     </View>
   );
@@ -220,60 +212,45 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  tabContainer: {
-    flexDirection: "row",
-    paddingTop: 16,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  tabButton: {
+  scrollView: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  activeTab: {},
-  tabText: {
-    fontWeight: "600",
-    fontSize: 16,
+  content: {
+    paddingTop: 95,
+    paddingHorizontal: 16,
+    paddingBottom: 150,
   },
-  activeTabText: {},
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    height: 48,
+    marginBottom: 12,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 50,
     borderWidth: 1,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     height: "100%",
-    fontSize: 16,
+    fontSize: 15,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-  },
-  listContainer: {
-    padding: 16,
+    paddingVertical: 40,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+    paddingVertical: 40,
   },
   emptyText: {
-    fontSize: 16,
+    fontSize: 15,
     textAlign: "center",
   },
 });

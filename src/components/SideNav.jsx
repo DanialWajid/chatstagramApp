@@ -6,7 +6,7 @@ import {
   StyleSheet,
   Platform,
 } from "react-native";
-import { Home, Compass } from "lucide-react-native";
+import { MessageCircle, Compass } from "lucide-react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAuthStore } from "../store/authStore";
 import { useTheme } from "../store/themeContext";
@@ -20,7 +20,7 @@ const SideNav = () => {
   const navItems = useMemo(
     () => [
       {
-        icon: <Home color={theme.text} size={24} />,
+        icon: <MessageCircle color={theme.text} size={24} />,
         screen: "Home",
       },
       {
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-evenly",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 4,
     borderTopWidth: 1,
     position: "absolute",
     bottom: 0,
@@ -102,15 +102,15 @@ const styles = StyleSheet.create({
   navItem: {
     alignItems: "center",
     justifyContent: "center",
-    padding: 10,
+    padding: 6,
   },
   icon: {
     marginBottom: 2,
   },
   specialButtonContainer: {
     borderRadius: 50,
-    padding: 14,
-    marginTop: -30,
+    padding: 12,
+    marginTop: -20,
     ...Platform.select({
       ios: {
         shadowOffset: { width: 0, height: 0 },
@@ -131,9 +131,9 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.1 }],
   },
   profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 2,
   },
 });

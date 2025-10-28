@@ -19,10 +19,16 @@ import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
 import { useTheme } from "../../store/themeContext";
 import { User, MessageCircle, Users, Plus } from "lucide-react-native";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import {
+  useNavigation,
+  useFocusEffect,
+  useRoute,
+} from "@react-navigation/native";
 import SocketService from "../../services/socket";
 import SideNav from "../../components/SideNav";
 import Navbar from "../../components/Navbar";
+import LongPressMenu from "../../components/LongPressMenu";
+import ReportModal from "../../components/ReportModal";
 
 const { width } = Dimensions.get("window");
 
@@ -115,6 +121,7 @@ const TypingIndicator = ({ typingUsers, isGroupChat, theme }) => {
 
 const ChatPage = () => {
   const [chats, setChats] = useState([]);
+  const route = useRoute();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [allFriends, setAllFriends] = useState([]);
@@ -122,6 +129,11 @@ const ChatPage = () => {
   const [showAllFriends, setShowAllFriends] = useState(false);
   const [typingStatus, setTypingStatus] = useState({});
   const [unreadCounts, setUnreadCounts] = useState({}); // { chatId: count }
+  const [showLongPressMenu, setShowLongPressMenu] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedChat, setSelectedChat] = useState(null);
+  const [selectedReportedUser, setSelectedReportedUser] = useState(null);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -132,7 +144,7 @@ const ChatPage = () => {
   const navbarTranslateY = useRef(new Animated.Value(0)).current;
   const isScrollingDown = useRef(false);
 
-  const API_URL = "http://192.168.0.110:8000/api";
+  const API_URL = "http://192.168.100.15:8000/api";
 
   // Enhanced Socket Connection with better error handling and reconnection
   useEffect(() => {
@@ -316,6 +328,18 @@ const ChatPage = () => {
       console.log("ChatPage focused, checking for updates");
 
       // Always refresh data when component gains focus
+      if (route.params?.updatedGroup) {
+        const updatedGroup = route.params.updatedGroup;
+        setChats((prevChats) =>
+          prevChats.map((chat) =>
+            chat._id === updatedGroup._id
+              ? { ...chat, groupProfilePic: updatedGroup.groupProfilePic } // Changed from groupImage to groupProfilePic
+              : chat
+          )
+        );
+        // Clear the param so it doesn't update again
+        route.params.updatedGroup = undefined;
+      }
       fetchData();
 
       // Also ensure socket is connected
@@ -331,7 +355,7 @@ const ChatPage = () => {
         tension: 100,
         friction: 20,
       }).start();
-    }, [user])
+    }, [user, route.params])
   );
 
   // Fetch both chats and friends sequentially to ensure proper filtering
@@ -690,7 +714,7 @@ const ChatPage = () => {
       backgroundColor: theme.card,
       borderTopWidth: 1,
       borderTopColor: theme.border,
-      transform: [{ translateY: navbarTranslateY }],
+      zIndex: 999,
     },
     navbarContainer: {
       position: "absolute",
@@ -701,12 +725,59 @@ const ChatPage = () => {
     },
   };
 
+  const handleLongPress = (chat, event) => {
+    // Get the other user in the chat (for DM) or show group info
+    let reportedUser = null;
+
+    if (chat.isGroupChat) {
+      // For group chats, you might want to show different options
+      // For now, we'll just return without showing report option
+      Alert.alert(
+        "Group Chat",
+        "Please report individual users from the chat screen"
+      );
+      return;
+    } else {
+      // For direct messages, get the other user
+      reportedUser = chat.users.find((u) => u._id !== user._id);
+    }
+
+    if (!reportedUser) {
+      Alert.alert("Error", "Unable to identify user to report");
+      return;
+    }
+
+    // Get touch position for menu placement
+    const { pageX, pageY } = event.nativeEvent;
+    setMenuPosition({ x: pageX - 80, y: pageY });
+
+    setSelectedChat(chat);
+    setSelectedReportedUser(reportedUser);
+    setShowLongPressMenu(true);
+  };
+
+  const handleReportUser = () => {
+    setShowLongPressMenu(false);
+    setTimeout(() => {
+      setShowReportModal(true);
+    }, 100);
+  };
+
+  const handleCloseReportModal = () => {
+    setShowReportModal(false);
+    setSelectedChat(null);
+    setSelectedReportedUser(null);
+  };
+
   const renderChatCard = ({ item }) => {
     const displayInfo = getChatDisplayInfo(item);
     const typingUsers = typingStatus[item._id] || [];
     const isTyping = typingUsers.length > 0;
     const unreadCount = unreadCounts[item._id] || 0;
     const hasUnread = unreadCount > 0;
+    const chatImage = item.isGroupChat
+      ? item.groupProfilePic || null
+      : item.users.find((u) => u._id !== user._id)?.profileImage || null;
 
     return (
       <TouchableOpacity
@@ -715,20 +786,17 @@ const ChatPage = () => {
           hasUnread && dynamicStyles.chatCardUnread,
         ]}
         onPress={() => navigateToExistingChat(item)}
+        onLongPress={(event) => handleLongPress(item, event)}
+        delayLongPress={500}
       >
         <View style={styles.chatCardContent}>
           <View style={styles.avatarContainer}>
-            {displayInfo.isGroup ? (
-              <View style={styles.groupAvatarContainer}>
-                <View style={dynamicStyles.groupAvatar}>
-                  <Users size={24} color={theme.accent} />
-                </View>
+            {chatImage ? (
+              <Image source={{ uri: chatImage }} style={styles.avatar} />
+            ) : item.isGroupChat ? (
+              <View style={dynamicStyles.groupAvatar}>
+                <Users size={24} color={theme.accent} />
               </View>
-            ) : displayInfo.image ? (
-              <Image
-                source={{ uri: displayInfo.image }}
-                style={styles.avatar}
-              />
             ) : (
               <View style={dynamicStyles.avatarFallback}>
                 <User size={32} color={theme.secondaryText} />
@@ -878,7 +946,7 @@ const ChatPage = () => {
     );
   };
 
-  const prepareSectionData = () => {
+  const prepareSectionData = React.useMemo(() => {
     const sections = [];
 
     // Recent Chats Section - sort by unread first, then by latest message
@@ -919,20 +987,28 @@ const ChatPage = () => {
     }
 
     return sections;
-  };
+  }, [chats, availableFriends, showAllFriends, unreadCounts, user._id]);
 
   if (loading) {
     return (
-      <View style={dynamicStyles.loadingContainer}>
-        <ActivityIndicator size="large" color={theme.accent} />
-        <Text style={[styles.loadingText, { color: theme.secondaryText }]}>
-          Loading chats...
-        </Text>
+      <View style={dynamicStyles.container}>
+        <View style={dynamicStyles.navbarContainer}>
+          <Navbar />
+        </View>
+        <View style={dynamicStyles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.accent} />
+          <Text style={[styles.loadingText, { color: theme.secondaryText }]}>
+            Loading chats...
+          </Text>
+        </View>
+        <View style={dynamicStyles.sideNavContainer}>
+          <SideNav />
+        </View>
       </View>
     );
   }
 
-  const sections = prepareSectionData();
+  const sections = prepareSectionData;
 
   // Calculate the bottom padding to ensure content isn't hidden behind navbar
   const navbarHeight = 60; // Approximate height of SideNav
@@ -943,85 +1019,77 @@ const ChatPage = () => {
         <Navbar />
       </View>
 
-      <View style={dynamicStyles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.navigate("Home")}
-        >
-          <Text style={[styles.backButtonText, { color: theme.text }]}>←</Text>
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Chats</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.refreshButton}
-            onPress={() => {
-              console.log("Manual refresh triggered");
-              handleRefresh();
-            }}
-          >
-            <Text style={[styles.refreshButtonText, { color: theme.accent }]}>
-              ↻
+      <View style={{ flex: 1, paddingTop: 95 }}>
+        {sections.length > 0 ? (
+          <SectionList
+            sections={sections}
+            keyExtractor={(item, index) => item._id + index}
+            renderItem={({ item, section }) => section.renderItem({ item })}
+            renderSectionHeader={renderSectionHeader}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={[
+              styles.listContainer,
+              { paddingBottom: navbarHeight + 20 }, // Add extra padding at bottom
+            ]}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[theme.accent]}
+                tintColor={theme.accent}
+              />
+            }
+            stickySectionHeadersEnabled={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16} // For smooth animation
+          />
+        ) : (
+          <View style={styles.emptyContainer}>
+            <MessageCircle size={64} color="#6b7280" />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>
+              No chats yet
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.createGroupButton}
-            onPress={navigateToCreateGroup}
-          >
-            <Plus size={24} color={theme.accent} />
-          </TouchableOpacity>
-        </View>
+            <Text
+              style={[styles.emptySubtitle, { color: theme.secondaryText }]}
+            >
+              {friendsLoading
+                ? "Loading friends..."
+                : availableFriends.length === 0
+                ? "All your friends already have chats with you!"
+                : "Start a conversation with your friends!"}
+            </Text>
+            {friendsLoading && (
+              <ActivityIndicator
+                size="small"
+                color={theme.accent}
+                style={styles.emptyLoader}
+              />
+            )}
+          </View>
+        )}
       </View>
 
-      {sections.length > 0 ? (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item, index) => item._id + index}
-          renderItem={({ item, section }) => section.renderItem({ item })}
-          renderSectionHeader={renderSectionHeader}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.listContainer,
-            { paddingBottom: navbarHeight + 20 }, // Add extra padding at bottom
-          ]}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              colors={[theme.accent]}
-              tintColor={theme.accent}
-            />
-          }
-          stickySectionHeadersEnabled={false}
-          onScroll={handleScroll}
-          scrollEventThrottle={16} // For smooth animation
-        />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <MessageCircle size={64} color="#6b7280" />
-          <Text style={[styles.emptyTitle, { color: theme.text }]}>
-            No chats yet
-          </Text>
-          <Text style={[styles.emptySubtitle, { color: theme.secondaryText }]}>
-            {friendsLoading
-              ? "Loading friends..."
-              : availableFriends.length === 0
-              ? "All your friends already have chats with you!"
-              : "Start a conversation with your friends!"}
-          </Text>
-          {friendsLoading && (
-            <ActivityIndicator
-              size="small"
-              color={theme.accent}
-              style={styles.emptyLoader}
-            />
-          )}
-        </View>
-      )}
+      {/* Long Press Menu */}
+      <LongPressMenu
+        visible={showLongPressMenu}
+        onClose={() => setShowLongPressMenu(false)}
+        onReportUser={handleReportUser}
+        chatData={selectedChat}
+        position={menuPosition}
+      />
 
-      {/* Animated SideNav */}
-      <Animated.View style={dynamicStyles.sideNavContainer}>
+      {/* Report Modal */}
+      <ReportModal
+        visible={showReportModal}
+        onClose={handleCloseReportModal}
+        chatData={selectedChat}
+        reportedUser={selectedReportedUser}
+      />
+
+      {/* SideNav */}
+      <View style={dynamicStyles.sideNavContainer}>
         <SideNav />
-      </Animated.View>
+      </View>
     </View>
   );
 };

@@ -6,8 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  StatusBar,
+  Platform,
+  Animated,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
 import {
   LogOut,
   Users,
@@ -17,53 +20,99 @@ import {
   Key,
   MessageCircle,
   Palette,
+  Plus,
 } from "lucide-react-native";
 import ChangePasswordModal from "./ChangePasswordModal";
 import { useTheme } from "../store/themeContext";
 import ThemeToggle from "./ThemeToggle";
-
-const logo = require("../assets/images/logo.jpg");
+import { useAuthStore } from "../store/authStore";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [menuHeight] = useState(new Animated.Value(0));
   const navigation = useNavigation();
+  const route = useRoute();
   const { theme } = useTheme();
+  const { logout } = useAuthStore();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (e) {
+      console.error("Logout error:", e);
+    }
     navigation.navigate("Login");
   };
 
   const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
+    if (isMenuOpen) {
+      // Close menu with animation
+      Animated.timing(menuHeight, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: false,
+      }).start(() => setIsMenuOpen(false));
+    } else {
+      // Open menu with animation
+      setIsMenuOpen(true);
+      Animated.timing(menuHeight, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: false,
+      }).start();
+    }
   };
 
-  const handleChatPress = () => {
-    navigation.navigate("ChatPage");
+  const handleCreateGroup = () => {
+    navigation.navigate("CreateGroupChat");
+    setIsMenuOpen(false);
   };
+
+  // Map route names to friendly titles
+  const titleMap = {
+    Home: "Chats",
+    Friends: "Connections",
+    Profile: "Profile",
+    ChatMessage: "Chat",
+    CreateGroupChat: "Create Group",
+    ExploreFriends: "Explore Connections",
+    FriendRequests: "Connections Requests",
+    GroupChatSettings: "Group Settings",
+    Login: "Login",
+    Signup: "Sign up",
+  };
+
+  const currentTitle = titleMap[route.name] || route.name || "";
+
+  // Get status bar height for Android
+  const statusBarHeight =
+    Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0;
 
   return (
     <View
       style={[
         styles.container,
-        { backgroundColor: theme.navbar, borderBottomColor: theme.border },
+        {
+          backgroundColor: theme.navbar,
+          borderBottomColor: theme.border,
+          paddingTop: statusBarHeight,
+        },
       ]}
     >
       <View style={[styles.navbar, { backgroundColor: theme.navbar }]}>
-        {/* Logo and Title */}
+        {/* Page title */}
         <TouchableOpacity
           style={styles.logoContainer}
           onPress={() => navigation.navigate("Home")}
         >
-          <Image source={logo} style={styles.logo} />
-          <Text style={[styles.title, { color: theme.text }]}>Catstagram</Text>
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
+            {currentTitle}
+          </Text>
         </TouchableOpacity>
 
-        {/* Chat Button and Menu */}
+        {/* Menu only */}
         <View style={styles.rightContainer}>
-          <TouchableOpacity onPress={handleChatPress} style={styles.chatButton}>
-            <MessageCircle width={24} height={24} color={theme.text} />
-          </TouchableOpacity>
           <TouchableOpacity onPress={toggleMenu} style={styles.menuButton}>
             {isMenuOpen ? (
               <CloseIcon width={24} height={24} color={theme.text} />
@@ -76,10 +125,18 @@ const Navbar = () => {
 
       {/* Menu (Dropdown) */}
       {isMenuOpen && (
-        <View
+        <Animated.View
           style={[
             styles.menu,
-            { backgroundColor: theme.navbar, borderBottomColor: theme.border },
+            {
+              backgroundColor: theme.navbar,
+              borderBottomColor: theme.border,
+              maxHeight: menuHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 500],
+              }),
+              opacity: menuHeight,
+            },
           ]}
         >
           <TouchableOpacity
@@ -96,7 +153,7 @@ const Navbar = () => {
               style={styles.menuIcon}
             />
             <Text style={[styles.menuText, { color: theme.text }]}>
-              My Friends
+              My Connections
             </Text>
           </TouchableOpacity>
 
@@ -114,7 +171,25 @@ const Navbar = () => {
               style={styles.menuIcon}
             />
             <Text style={[styles.menuText, { color: theme.text }]}>
-              Friend Requests
+              Connection Requests
+            </Text>
+          </TouchableOpacity>
+
+          {/* Move Create Group Chat into Navbar menu */}
+          <TouchableOpacity
+            style={[styles.menuItem, { backgroundColor: theme.navbar }]}
+            onPress={() => {
+              handleCreateGroup();
+            }}
+          >
+            <Plus
+              width={20}
+              height={20}
+              color={theme.text}
+              style={styles.menuIcon}
+            />
+            <Text style={[styles.menuText, { color: theme.text }]}>
+              Create Group Chat
             </Text>
           </TouchableOpacity>
 
@@ -165,7 +240,7 @@ const Navbar = () => {
             />
             <Text style={[styles.menuText, { color: theme.text }]}>Logout</Text>
           </TouchableOpacity>
-        </View>
+        </Animated.View>
       )}
 
       {/* Change Password Modal */}
@@ -185,10 +260,12 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     borderBottomWidth: 1,
-    zIndex: 10,
+    zIndex: 1000,
+    position: "absolute",
+    top: 0,
   },
   navbar: {
-    height: 80,
+    height: 60,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -199,17 +276,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 0,
+    height: 0,
+    borderRadius: 0,
   },
   title: {
     fontFamily: "InstagramLogo",
-    fontSize: 40,
+    fontSize: 24,
     marginLeft: 8,
-    textShadowColor: "rgba(0, 0, 0, 0.2)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    fontWeight: "700",
   },
   rightContainer: {
     flexDirection: "row",
@@ -228,6 +303,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
+    overflow: "hidden",
   },
   menuItem: {
     flexDirection: "row",

@@ -23,6 +23,7 @@ const Login = ({ onLogin }) => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const { theme } = useTheme();
 
   const handleLogin = async () => {
@@ -32,6 +33,7 @@ const Login = ({ onLogin }) => {
 
     try {
       setLoading(true);
+      setErrorMessage(""); // Clear previous error
       const data = await login(email, password);
       console.log("Two Factor:", data.twoFactorRequired);
 
@@ -42,6 +44,8 @@ const Login = ({ onLogin }) => {
         navigation.navigate("TwoFactor");
       }
     } catch (error) {
+      // Display ban error in the UI instead of Alert
+      setErrorMessage(error.message);
       Alert.alert("Login Failed", error.message);
     } finally {
       setLoading(false);
@@ -66,6 +70,19 @@ const Login = ({ onLogin }) => {
           <Text style={[styles.title, { color: theme.accent }]}>
             Welcome Back
           </Text>
+
+          {/* Error Message Banner */}
+          {errorMessage && (
+            <View style={styles.errorBanner}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color="#DC2626"
+                style={styles.errorIcon}
+              />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
 
           <View
             style={[styles.inputContainer, { backgroundColor: theme.input }]}
@@ -215,5 +232,24 @@ const styles = StyleSheet.create({
   signupText: {},
   signupLink: {
     fontWeight: "bold",
+  },
+  errorBanner: {
+    backgroundColor: "#FEE2E2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    color: "#DC2626",
+    fontSize: 13,
+    flex: 1,
+    lineHeight: 18,
   },
 });
