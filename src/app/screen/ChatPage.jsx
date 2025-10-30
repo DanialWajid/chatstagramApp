@@ -13,12 +13,20 @@ import {
   Alert,
   SectionList,
   Animated,
+  TextInput,
 } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
 import { useTheme } from "../../store/themeContext";
-import { User, MessageCircle, Users, Plus } from "lucide-react-native";
+import {
+  User,
+  MessageCircle,
+  Users,
+  Plus,
+  Search,
+  X as CloseIcon,
+} from "lucide-react-native";
 import {
   useNavigation,
   useFocusEffect,
@@ -134,6 +142,8 @@ const ChatPage = () => {
   const [selectedChat, setSelectedChat] = useState(null);
   const [selectedReportedUser, setSelectedReportedUser] = useState(null);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const { user } = useAuthStore();
   const { theme } = useTheme();
   const navigation = useNavigation();
@@ -949,9 +959,31 @@ const ChatPage = () => {
   const prepareSectionData = React.useMemo(() => {
     const sections = [];
 
+    // Filter chats based on search query
+    const filteredChats = chats.filter((chat) => {
+      if (!searchQuery.trim()) return true;
+
+      const query = searchQuery.toLowerCase();
+      const displayInfo = getChatDisplayInfo(chat);
+      const chatName = displayInfo.name.toLowerCase();
+      const lastMessage = getLastMessageText(chat).toLowerCase();
+
+      return chatName.includes(query) || lastMessage.includes(query);
+    });
+
+    // Filter friends based on search query
+    const filteredFriends = availableFriends.filter((friend) => {
+      if (!searchQuery.trim()) return true;
+
+      const query = searchQuery.toLowerCase();
+      const friendName = friend.name.toLowerCase();
+
+      return friendName.includes(query);
+    });
+
     // Recent Chats Section - sort by unread first, then by latest message
-    if (chats.length > 0) {
-      const sortedChats = [...chats].sort((a, b) => {
+    if (filteredChats.length > 0) {
+      const sortedChats = [...filteredChats].sort((a, b) => {
         const aUnread = unreadCounts[a._id] || 0;
         const bUnread = unreadCounts[b._id] || 0;
 
@@ -974,10 +1006,10 @@ const ChatPage = () => {
     }
 
     // Start New Chat Section - only show friends without existing chats
-    if (availableFriends.length > 0) {
+    if (filteredFriends.length > 0) {
       const friendsToShow = showAllFriends
-        ? availableFriends
-        : availableFriends.slice(0, 50);
+        ? filteredFriends
+        : filteredFriends.slice(0, 50);
       sections.push({
         title: "Start New Chat",
         data: friendsToShow,
@@ -987,7 +1019,14 @@ const ChatPage = () => {
     }
 
     return sections;
-  }, [chats, availableFriends, showAllFriends, unreadCounts, user._id]);
+  }, [
+    chats,
+    availableFriends,
+    showAllFriends,
+    unreadCounts,
+    user._id,
+    searchQuery,
+  ]);
 
   if (loading) {
     return (
@@ -1042,23 +1081,59 @@ const ChatPage = () => {
             stickySectionHeadersEnabled={false}
             onScroll={handleScroll}
             scrollEventThrottle={16} // For smooth animation
+            ListHeaderComponent={() => (
+              <View style={styles.searchContainer} key="search-header">
+                <View
+                  style={[
+                    styles.searchInputContainer,
+                    {
+                      backgroundColor: theme.input,
+                      borderColor: isSearchFocused
+                        ? theme.accent
+                        : theme.border,
+                    },
+                  ]}
+                >
+                  <Search
+                    size={20}
+                    color={isSearchFocused ? theme.accent : theme.secondaryText}
+                  />
+                  <TextInput
+                    style={[styles.searchInput, { color: theme.text }]}
+                    placeholder="Search or start new chats..."
+                    placeholderTextColor={theme.secondaryText}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    onFocus={() => setIsSearchFocused(true)}
+                    onBlur={() => setIsSearchFocused(false)}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery("")}>
+                      <CloseIcon size={20} color={theme.secondaryText} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
           />
         ) : (
           <View style={styles.emptyContainer}>
             <MessageCircle size={64} color="#6b7280" />
             <Text style={[styles.emptyTitle, { color: theme.text }]}>
-              No chats yet
+              {searchQuery ? "No results found" : "No chats yet"}
             </Text>
             <Text
               style={[styles.emptySubtitle, { color: theme.secondaryText }]}
             >
-              {friendsLoading
+              {searchQuery
+                ? `No chats or friends match "${searchQuery}"`
+                : friendsLoading
                 ? "Loading friends..."
                 : availableFriends.length === 0
                 ? "All your friends already have chats with you!"
                 : "Start a conversation with your friends!"}
             </Text>
-            {friendsLoading && (
+            {friendsLoading && !searchQuery && (
               <ActivityIndicator
                 size="small"
                 color={theme.accent}
@@ -1275,6 +1350,28 @@ const styles = StyleSheet.create({
   refreshButtonText: {
     fontSize: 20,
     fontWeight: "bold",
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 2,
+    paddingBottom: 4,
+  },
+  searchInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1.5,
+    maxWidth: "90%",
+    alignSelf: "center",
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    paddingVertical: 2,
+    height: 32,
   },
 });
 

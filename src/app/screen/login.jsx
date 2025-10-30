@@ -44,9 +44,15 @@ const Login = ({ onLogin }) => {
         navigation.navigate("TwoFactor");
       }
     } catch (error) {
-      // Display ban error in the UI instead of Alert
+      // Display ban error in the UI error banner
       setErrorMessage(error.message);
-      Alert.alert("Login Failed", error.message);
+      // Only show Alert for non-ban errors to avoid redundancy
+      if (
+        !error.message.toLowerCase().includes("banned") &&
+        !error.message.toLowerCase().includes("restricted")
+      ) {
+        Alert.alert("Login Failed", error.message);
+      }
     } finally {
       setLoading(false);
     }

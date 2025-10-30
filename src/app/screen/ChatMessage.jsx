@@ -39,6 +39,7 @@ import {
   MoreVertical,
   Trash2,
   FileText,
+  Ban,
 } from "lucide-react-native";
 import Slider from "@react-native-community/slider";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -373,6 +374,7 @@ export default function ChatMessage({
   const [showFileOptions, setShowFileOptions] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
+  const [isOtherUserBlocked, setIsOtherUserBlocked] = useState(false);
 
   const [imagePreview, setImagePreview] = useState({
     visible: false,
@@ -554,6 +556,10 @@ export default function ChatMessage({
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
   const { chatId } = route.params;
 
+  console.log("[ChatMessage] Component render - chatId:", chatId);
+  console.log("[ChatMessage] authUser:", authUser);
+  console.log("[ChatMessage] isOtherUserBlocked:", isOtherUserBlocked);
+
   const fetchAgoraToken = async (channelName, uid = 0) => {
     try {
       const { data } = await axios.post(`${CALL_URL}/token`, {
@@ -652,6 +658,107 @@ export default function ChatMessage({
     );
   };
 
+  const handleBlockUnblock = async () => {
+    setShowMenuModal(false);
+
+    const chatData = route.params?.chatData;
+    if (!chatData || chatData.isGroupChat) {
+      Alert.alert("Error", "Cannot block in group chats");
+      return;
+    }
+
+    const otherUser = chatData.users.find((u) => u._id !== authUser._id);
+    if (!otherUser) {
+      Alert.alert("Error", "User not found");
+      return;
+    }
+
+    const action = isOtherUserBlocked ? "Unblock" : "Block";
+    const actionLower = action.toLowerCase();
+
+    Alert.alert(
+      `${action} User`,
+      `Are you sure you want to ${actionLower} ${otherUser.name}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: action,
+          style: isOtherUserBlocked ? "default" : "destructive",
+          onPress: async () => {
+            try {
+              const token = await SecureStore.getItemAsync("token");
+              console.log(
+                `[${action}] Starting ${actionLower} for user:`,
+                otherUser._id
+              );
+              console.log(`[${action}] Current user ID:`, authUser._id);
+
+              const endpoint = isOtherUserBlocked
+                ? `${API_URL}/user/unblock-user/${authUser._id}`
+                : `${API_URL}/user/block-user/${authUser._id}`;
+
+              const bodyKey = isOtherUserBlocked
+                ? "userIdToUnblock"
+                : "userIdToBlock";
+
+              const response = await axios.post(
+                endpoint,
+                { [bodyKey]: otherUser._id },
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              );
+
+              console.log(`[${action}] API Response:`, response.data);
+
+              if (response.data.success) {
+                // Update the global user state with the blocked list from API response
+                useAuthStore.getState().setUser({
+                  blocked: response.data.blocked,
+                });
+
+                console.log(
+                  `[${action}] Updated blocked list:`,
+                  response.data.blocked
+                );
+
+                // Update local state
+                setIsOtherUserBlocked(!isOtherUserBlocked);
+
+                Alert.alert(
+                  "Success",
+                  `User ${otherUser.name} has been ${actionLower}ed.`
+                );
+
+                // Re-check blocked status
+                checkIfUserBlocked();
+              } else {
+                console.log(`[${action}] API returned success: false`);
+                Alert.alert(
+                  "Error",
+                  response.data.message || `Failed to ${actionLower} user`
+                );
+              }
+            } catch (error) {
+              console.error(`[${action}] Error:`, error);
+              console.error(
+                `[${action}] Error response:`,
+                error.response?.data
+              );
+              Alert.alert(
+                "Error",
+                error.response?.data?.message ||
+                  `Failed to ${actionLower} the user. Please try again.`
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleExportChatPress = () => {
     const getChatDisplayInfo = () => displayInfo;
     handleExportChat(messages, authUser, getChatDisplayInfo, setShowMenuModal);
@@ -660,6 +767,7 @@ export default function ChatMessage({
   useEffect(() => {
     console.log("ChatMessage component mounted for chat:", chatId);
     fetchMessages();
+    checkIfUserBlocked();
     setupSocket();
 
     return () => {
@@ -671,6 +779,21 @@ export default function ChatMessage({
       } catch {}
     };
   }, [chatId, authUser._id]); // Use authUser._id here
+
+  useEffect(() => {
+    console.log(
+      "[BlockCheck] isOtherUserBlocked state changed to:",
+      isOtherUserBlocked
+    );
+  }, [isOtherUserBlocked]);
+
+  // Re-check blocked status when authUser.blocked changes
+  useEffect(() => {
+    if (authUser?.blocked) {
+      console.log("[BlockCheck] AuthUser blocked list changed, re-checking...");
+      checkIfUserBlocked();
+    }
+  }, [authUser?.blocked]);
 
   const groupMessagesByDate = (messages) => {
     const grouped = [];
@@ -821,6 +944,82 @@ export default function ChatMessage({
     SocketService.socket?.off("call:end");
     SocketService.hasJoinedChat = false;
     setTypingUsers([]);
+  };
+
+  const checkIfUserBlocked = async () => {
+    try {
+      const chatData = route.params?.chatData;
+
+      console.log("[BlockCheck] Starting blocked check...");
+      console.log("[BlockCheck] Chat data:", chatData);
+
+      // Only check for one-on-one chats, not group chats
+      if (!chatData || chatData.isGroupChat) {
+        console.log("[BlockCheck] Skipping - is group chat or no chat data");
+        setIsOtherUserBlocked(false);
+        return;
+      }
+
+      const otherUser = chatData.users.find((u) => u._id !== authUser._id);
+      console.log("[BlockCheck] Other user:", otherUser);
+      console.log("[BlockCheck] Current user (authUser):", authUser._id);
+      console.log("[BlockCheck] AuthUser object:", authUser);
+      console.log("[BlockCheck] AuthUser blocked array:", authUser.blocked);
+
+      if (!otherUser) {
+        console.log("[BlockCheck] No other user found");
+        setIsOtherUserBlocked(false);
+        return;
+      }
+
+      // If blocked array is not available in authUser, fetch it from API
+      let blockedList = [];
+      if (!authUser.blocked || !Array.isArray(authUser.blocked)) {
+        console.log(
+          "[BlockCheck] Blocked array not in authUser, fetching from API..."
+        );
+        try {
+          const token = await SecureStore.getItemAsync("token");
+          const response = await axios.get(
+            `${API_URL}/profile/getProfile/${authUser._id}`,
+            {
+              headers: { Authorization: `Bearer ${token}` },
+            }
+          );
+          blockedList = Array.isArray(response.data.blocked)
+            ? response.data.blocked
+            : [];
+          console.log(
+            "[BlockCheck] Fetched blocked list from API:",
+            blockedList
+          );
+        } catch (apiError) {
+          console.error("[BlockCheck] Error fetching profile:", apiError);
+          blockedList = [];
+        }
+      } else {
+        blockedList = authUser.blocked;
+      }
+
+      // Check if the other user is in the blocked list
+      const isBlocked = blockedList.some((blockedId) => {
+        // blockedId might be an object with _id or just an ID string
+        const idToCheck =
+          typeof blockedId === "object" ? blockedId._id : blockedId;
+        return idToCheck?.toString() === otherUser._id.toString();
+      });
+
+      console.log("[BlockCheck] Blocked list:", blockedList);
+      console.log("[BlockCheck] Other user ID:", otherUser._id);
+      console.log("[BlockCheck] Is user blocked:", isBlocked);
+
+      setIsOtherUserBlocked(isBlocked);
+      console.log("[BlockCheck] User blocked status set to:", isBlocked);
+    } catch (error) {
+      console.error("[BlockCheck] Error checking blocked status:", error);
+      console.error("[BlockCheck] Error details:", error.message);
+      setIsOtherUserBlocked(false);
+    }
   };
 
   const fetchMessages = async () => {
@@ -2069,12 +2268,14 @@ export default function ChatMessage({
         ListFooterComponent={<TypingIndicator typingUsers={typingUsers} />}
       />
 
-      <TouchableOpacity
-        style={dynamicStyles.aiButton}
-        onPress={() => setShowAiPrompt(true)}
-      >
-        <Bot size={24} color={theme.buttonText} />
-      </TouchableOpacity>
+      {!isOtherUserBlocked && (
+        <TouchableOpacity
+          style={dynamicStyles.aiButton}
+          onPress={() => setShowAiPrompt(true)}
+        >
+          <Bot size={24} color={theme.buttonText} />
+        </TouchableOpacity>
+      )}
 
       <AiPromptBox
         visible={showAiPrompt}
@@ -2082,70 +2283,72 @@ export default function ChatMessage({
         onAiReply={handleAiReply}
       />
 
-      <Modal
-        visible={showFileOptions}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowFileOptions(false)}
-      >
-        <View style={styles.fileOptionsOverlay}>
-          <TouchableOpacity
-            style={styles.fileOptionsBackdrop}
-            onPress={() => setShowFileOptions(false)}
-          />
-          <View
-            style={[
-              styles.fileOptionsContainer,
-              { backgroundColor: theme.card, borderTopColor: theme.border },
-            ]}
-          >
+      {!isOtherUserBlocked && (
+        <Modal
+          visible={showFileOptions}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowFileOptions(false)}
+        >
+          <View style={styles.fileOptionsOverlay}>
             <TouchableOpacity
-              style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={selectImageFromGallery}
-            >
-              <ImageIcon size={20} color={theme.accent} />
-              <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Choose Image
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={selectVideoFromLibrary}
-            >
-              <ImageIcon size={20} color={theme.accent} />
-              <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Choose Video
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={recordVideoWithCamera}
-            >
-              <ImageIcon size={20} color={theme.accent} />
-              <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Record Video
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.fileOption, { borderBottomColor: theme.border }]}
-              onPress={selectDocument}
-            >
-              <Paperclip size={20} color={theme.accent} />
-              <Text style={[styles.fileOptionText, { color: theme.text }]}>
-                Choose Document
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
+              style={styles.fileOptionsBackdrop}
               onPress={() => setShowFileOptions(false)}
-              style={{ paddingVertical: 16, alignItems: "center" }}
+            />
+            <View
+              style={[
+                styles.fileOptionsContainer,
+                { backgroundColor: theme.card, borderTopColor: theme.border },
+              ]}
             >
-              <Text style={{ color: theme.secondaryText, fontWeight: "600" }}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.fileOption, { borderBottomColor: theme.border }]}
+                onPress={selectImageFromGallery}
+              >
+                <ImageIcon size={20} color={theme.accent} />
+                <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                  Choose Image
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.fileOption, { borderBottomColor: theme.border }]}
+                onPress={selectVideoFromLibrary}
+              >
+                <ImageIcon size={20} color={theme.accent} />
+                <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                  Choose Video
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.fileOption, { borderBottomColor: theme.border }]}
+                onPress={recordVideoWithCamera}
+              >
+                <ImageIcon size={20} color={theme.accent} />
+                <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                  Record Video
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.fileOption, { borderBottomColor: theme.border }]}
+                onPress={selectDocument}
+              >
+                <Paperclip size={20} color={theme.accent} />
+                <Text style={[styles.fileOptionText, { color: theme.text }]}>
+                  Choose Document
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowFileOptions(false)}
+                style={{ paddingVertical: 16, alignItems: "center" }}
+              >
+                <Text style={{ color: theme.secondaryText, fontWeight: "600" }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
 
       <Modal
         visible={imagePreview.visible}
@@ -2516,6 +2719,23 @@ export default function ChatMessage({
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              style={[styles.menuOption, { borderBottomColor: theme.border }]}
+              onPress={handleBlockUnblock}
+            >
+              <Ban
+                size={20}
+                color={isOtherUserBlocked ? theme.accent : "#ff8c00"}
+              />
+              <Text
+                style={[
+                  styles.menuOptionText,
+                  { color: isOtherUserBlocked ? theme.accent : "#ff8c00" },
+                ]}
+              >
+                {isOtherUserBlocked ? "Unblock User" : "Block User"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={styles.menuOption}
               onPress={handleDeleteChat}
             >
@@ -2528,7 +2748,7 @@ export default function ChatMessage({
         </TouchableOpacity>
       </Modal>
 
-      {selectedFile && (
+      {selectedFile && !isOtherUserBlocked && (
         <View
           style={[
             styles.selectedFileContainer,
@@ -2572,80 +2792,97 @@ export default function ChatMessage({
       )}
 
       <View style={dynamicStyles.inputContainer}>
-        <TouchableOpacity
-          style={[styles.attachButton, { backgroundColor: theme.input }]}
-          onPress={() => setShowFileOptions(true)}
-        >
-          <Paperclip size={20} color={theme.secondaryText} />
-        </TouchableOpacity>
-
-        {isRecording ? (
-          <VoiceRecorderControls
-            isRecording={isRecording}
-            recordingDuration={recordingDuration}
-            onStop={stopVoiceRecording}
-            onStopAndSend={stopAndSendVoiceRecording}
-            onCancel={cancelVoiceRecording}
-          />
-        ) : (
-          <TextInput
-            style={[dynamicStyles.textInput, { marginLeft: 8 }]}
-            value={newMessage}
-            onChangeText={handleTyping}
-            placeholder={`Message...`}
-            placeholderTextColor={theme.secondaryText}
-            multiline
-            maxLength={500}
-            editable={!sending}
-            returnKeyType="send"
-            onSubmitEditing={sendMessage}
-            blurOnSubmit={false}
-          />
-        )}
-
-        {isRecording ? (
-          <View />
-        ) : (
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (newMessage.trim() || selectedFile) && !sending
-                ? dynamicStyles.sendButtonActive
-                : dynamicStyles.sendButtonInactive,
-            ]}
-            onPress={sendMessage}
-            disabled={(!newMessage.trim() && !selectedFile) || sending}
+        {isOtherUserBlocked ? (
+          <View
+            style={[styles.blockedMessageContainer, { flex: 1, padding: 16 }]}
           >
-            {sending ? (
-              <ActivityIndicator size={16} color={theme.buttonText} />
+            <Text
+              style={[
+                styles.blockedMessageText,
+                { color: theme.secondaryText, textAlign: "center" },
+              ]}
+            >
+              This user has been blocked
+            </Text>
+          </View>
+        ) : (
+          <>
+            <TouchableOpacity
+              style={[styles.attachButton, { backgroundColor: theme.input }]}
+              onPress={() => setShowFileOptions(true)}
+            >
+              <Paperclip size={20} color={theme.secondaryText} />
+            </TouchableOpacity>
+
+            {isRecording ? (
+              <VoiceRecorderControls
+                isRecording={isRecording}
+                recordingDuration={recordingDuration}
+                onStop={stopVoiceRecording}
+                onStopAndSend={stopAndSendVoiceRecording}
+                onCancel={cancelVoiceRecording}
+              />
             ) : (
-              <Send
-                size={20}
-                color={
-                  (newMessage.trim() || selectedFile) && !sending
-                    ? theme.buttonText
-                    : theme.secondaryText
-                }
+              <TextInput
+                style={[dynamicStyles.textInput, { marginLeft: 8 }]}
+                value={newMessage}
+                onChangeText={handleTyping}
+                placeholder={`Message...`}
+                placeholderTextColor={theme.secondaryText}
+                multiline
+                maxLength={500}
+                editable={!sending}
+                returnKeyType="send"
+                onSubmitEditing={sendMessage}
+                blurOnSubmit={false}
               />
             )}
-          </TouchableOpacity>
-        )}
 
-        {!isRecording && (
-          <TouchableOpacity
-            style={[styles.micButton, { backgroundColor: theme.input }]}
-            onPress={startVoiceRecording}
-            disabled={sending || !!selectedFile}
-          >
-            <Mic
-              size={20}
-              color={
-                sending || !!selectedFile
-                  ? theme.secondaryText
-                  : theme.secondaryText
-              }
-            />
-          </TouchableOpacity>
+            {isRecording ? (
+              <View />
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  (newMessage.trim() || selectedFile) && !sending
+                    ? dynamicStyles.sendButtonActive
+                    : dynamicStyles.sendButtonInactive,
+                ]}
+                onPress={sendMessage}
+                disabled={(!newMessage.trim() && !selectedFile) || sending}
+              >
+                {sending ? (
+                  <ActivityIndicator size={16} color={theme.buttonText} />
+                ) : (
+                  <Send
+                    size={20}
+                    color={
+                      (newMessage.trim() || selectedFile) && !sending
+                        ? theme.buttonText
+                        : theme.secondaryText
+                    }
+                  />
+                )}
+              </TouchableOpacity>
+            )}
+
+            {!isRecording && (
+              <TouchableOpacity
+                style={[styles.micButton, { backgroundColor: theme.input }]}
+                onPress={startVoiceRecording}
+                disabled={sending || !!selectedFile}
+              >
+                <Mic
+                  size={20}
+                  color={
+                    sending || !!selectedFile
+                      ? theme.secondaryText
+                      : theme.secondaryText
+                  }
+                />
+              </TouchableOpacity>
+            )}
+          </>
         )}
       </View>
     </KeyboardAvoidingView>
@@ -3179,5 +3416,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 12,
     fontWeight: "500",
+  },
+  blockedMessageContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  blockedMessageText: {
+    fontSize: 14,
+    fontStyle: "italic",
   },
 });

@@ -11,8 +11,18 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useTheme } from "../store/themeContext";
-import { X, AlertTriangle, CheckCircle2, Circle } from "lucide-react-native";
+import {
+  X,
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Square,
+  CheckSquare,
+} from "lucide-react-native";
 import { reportService } from "../services/reportService";
+import axios from "axios";
+import * as SecureStore from "expo-secure-store";
+import { useAuthStore } from "../store/authStore";
 
 const REPORT_CATEGORIES = [
   { id: "spam", label: "Spam", description: "Unwanted repetitive messages" },
@@ -41,9 +51,13 @@ const REPORT_CATEGORIES = [
 
 const ReportModal = ({ visible, onClose, chatData, reportedUser }) => {
   const { theme } = useTheme();
+  const { user } = useAuthStore();
   const [selectedCategory, setSelectedCategory] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
+  const [blockUser, setBlockUser] = useState(false);
+
+  const API_URL = "http://192.168.100.15:8000/api";
 
   const dynamicStyles = {
     overlay: {
@@ -111,22 +125,111 @@ const ReportModal = ({ visible, onClose, chatData, reportedUser }) => {
         description: description.trim(),
       };
 
+      // Submit report first
       const response = await reportService.submitReport(reportData);
 
       if (response.success || response.report) {
-        Alert.alert(
-          "Report Submitted",
-          "Thank you for your report. We will review it and take appropriate action.",
-          [
-            {
-              text: "OK",
-              onPress: () => {
-                resetForm();
-                onClose();
+        // If block user checkbox is checked, block the user
+        if (blockUser) {
+          try {
+            const token = await SecureStore.getItemAsync("token");
+            console.log(
+              "[ReportBlock] Starting block for user:",
+              reportedUser._id
+            );
+
+            const blockResponse = await axios.post(
+              `${API_URL}/user/block-user/${user._id}`,
+              {
+                userIdToBlock: reportedUser._id,
               },
-            },
-          ]
-        );
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            console.log(
+              "[ReportBlock] Block API Response:",
+              blockResponse.data
+            );
+
+            if (blockResponse.data.success) {
+              // Update the global user state with the blocked list from API response
+              useAuthStore.getState().setUser({
+                blocked: blockResponse.data.blocked,
+              });
+
+              console.log(
+                "[ReportBlock] Updated blocked list:",
+                blockResponse.data.blocked
+              );
+
+              Alert.alert(
+                "Success",
+                `Report submitted and ${reportedUser.name} has been blocked.`,
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      resetForm();
+                      onClose();
+                    },
+                  },
+                ]
+              );
+            } else {
+              console.log("[ReportBlock] Block API returned success: false");
+              Alert.alert(
+                "Partial Success",
+                "Report submitted but failed to block user.",
+                [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      resetForm();
+                      onClose();
+                    },
+                  },
+                ]
+              );
+            }
+          } catch (blockError) {
+            console.error("[ReportBlock] Error blocking user:", blockError);
+            console.error(
+              "[ReportBlock] Error response:",
+              blockError.response?.data
+            );
+            Alert.alert(
+              "Partial Success",
+              "Report submitted but failed to block user.",
+              [
+                {
+                  text: "OK",
+                  onPress: () => {
+                    resetForm();
+                    onClose();
+                  },
+                },
+              ]
+            );
+          }
+        } else {
+          Alert.alert(
+            "Report Submitted",
+            "Thank you for your report. We will review it and take appropriate action.",
+            [
+              {
+                text: "OK",
+                onPress: () => {
+                  resetForm();
+                  onClose();
+                },
+              },
+            ]
+          );
+        }
       } else {
         Alert.alert("Error", response.message || "Failed to submit report");
       }
@@ -150,6 +253,7 @@ const ReportModal = ({ visible, onClose, chatData, reportedUser }) => {
   const resetForm = () => {
     setSelectedCategory("");
     setDescription("");
+    setBlockUser(false);
   };
 
   const handleClose = () => {
@@ -278,6 +382,57 @@ const ReportModal = ({ visible, onClose, chatData, reportedUser }) => {
                 {description.length}/500
               </Text>
             </View>
+
+            {/* Block User Checkbox */}
+            <TouchableOpacity
+              style={[
+                styles.checkboxContainer,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                },
+              ]}
+              onPress={() => setBlockUser(!blockUser)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.checkboxContent}>
+                <View style={styles.checkboxIndicator}>
+                  {blockUser ? (
+                    <CheckSquare
+                      size={20}
+                      color={theme.accent}
+                      strokeWidth={2.5}
+                    />
+                  ) : (
+                    <Square
+                      size={20}
+                      color={theme.secondaryText}
+                      strokeWidth={2}
+                    />
+                  )}
+                </View>
+                <View style={styles.checkboxTextContainer}>
+                  <Text
+                    style={[
+                      styles.checkboxLabel,
+                      {
+                        color: blockUser ? theme.accent : theme.text,
+                      },
+                    ]}
+                  >
+                    Block this user
+                  </Text>
+                  <Text
+                    style={[
+                      styles.checkboxDescription,
+                      { color: theme.secondaryText },
+                    ]}
+                  >
+                    Prevent this user from contacting you
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
 
             <View
               style={[
@@ -431,6 +586,31 @@ const styles = StyleSheet.create({
   },
   charCount: {
     fontSize: 11,
+  },
+  checkboxContainer: {
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  checkboxContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+  },
+  checkboxIndicator: {
+    marginRight: 10,
+  },
+  checkboxTextContainer: {
+    flex: 1,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+    marginBottom: 2,
+  },
+  checkboxDescription: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   noteCard: {
     padding: 8,

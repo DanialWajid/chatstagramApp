@@ -29,6 +29,12 @@ const UserCard = ({ cardUser, isPrivate, isFriend, onFriendUpdate }) => {
 
   useEffect(() => {
     const fetchUserStatus = async () => {
+      // Validate cardUser and _id before making API call
+      if (!cardUser || !cardUser._id || cardUser._id === "undefined") {
+        console.error("Invalid cardUser or cardUser._id:", cardUser);
+        return;
+      }
+
       try {
         const token = await SecureStore.getItemAsync("token");
         const response = await axios.get(
@@ -63,25 +69,55 @@ const UserCard = ({ cardUser, isPrivate, isFriend, onFriendUpdate }) => {
             setIsLoading(true);
             try {
               const token = await SecureStore.getItemAsync("token");
+              console.log("[Block] Starting block for user:", cardUser._id);
+              console.log("[Block] Current user ID:", user._id);
+
               const response = await axios.post(
                 `${API_URL}/user/block-user/${user._id}`,
                 {
                   userIdToBlock: cardUser._id,
+                },
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
                 }
               );
+
+              console.log("[Block] API Response:", response.data);
+
               if (response.data.success) {
                 setIsBlocked(true);
+
+                // Update the global user state with the blocked list from API response
+                useAuthStore.getState().setUser({
+                  blocked: response.data.blocked,
+                });
+
+                console.log(
+                  "[Block] Updated blocked list:",
+                  response.data.blocked
+                );
+
                 Alert.alert(
                   "Success",
                   `User ${cardUser.name} has been blocked.`
                 );
                 onFriendUpdate && onFriendUpdate();
+              } else {
+                console.log("[Block] API returned success: false");
+                Alert.alert(
+                  "Error",
+                  response.data.message || "Failed to block user"
+                );
               }
             } catch (error) {
-              console.error("Error blocking user:", error);
+              console.error("[Block] Error blocking user:", error);
+              console.error("[Block] Error response:", error.response?.data);
               Alert.alert(
                 "Error",
-                "Failed to block the user. Please try again."
+                error.response?.data?.message ||
+                  "Failed to block the user. Please try again."
               );
             } finally {
               setIsLoading(false);
@@ -105,25 +141,45 @@ const UserCard = ({ cardUser, isPrivate, isFriend, onFriendUpdate }) => {
             setIsLoading(true);
             try {
               const token = await SecureStore.getItemAsync("token");
+              console.log("[Unblock] Starting unblock for user:", cardUser._id);
+              console.log("[Unblock] Current user ID:", user._id);
+
               const response = await axios.post(
                 `${API_URL}/user/unblock-user/${user._id}`,
                 {
                   userIdToUnblock: cardUser._id,
+                },
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
                 }
               );
               if (response.data.success) {
                 setIsBlocked(false);
+
+                // Update the global user state with the blocked list from API response
+                useAuthStore.getState().setUser({
+                  blocked: response.data.blocked,
+                });
+
                 Alert.alert(
                   "Success",
                   `User ${cardUser.name} has been unblocked.`
                 );
                 onFriendUpdate && onFriendUpdate();
+              } else {
+                Alert.alert(
+                  "Error",
+                  response.data.message || "Failed to unblock user"
+                );
               }
             } catch (error) {
-              console.error("Error unblocking user:", error);
+              console.error("[Unblock] Error response:", error.response?.data);
               Alert.alert(
                 "Error",
-                "Failed to unblock the user. Please try again."
+                error.response?.data?.message ||
+                  "Failed to unblock the user. Please try again."
               );
             } finally {
               setIsLoading(false);

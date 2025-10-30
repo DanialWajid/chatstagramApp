@@ -13,6 +13,7 @@ import ChatPage from "../app/screen/ChatPage";
 import ChatMessage from "../app/screen/ChatMessage";
 import CreateGroupChat from "../app/screen/CreateGroupChat";
 import GroupChatSettings from "../app/screen/GroupChatSettings";
+import BlockedConnections from "../app/screen/BlockedConnections";
 import { useAuthStore } from "../store/authStore";
 import { ThemeProvider } from "../store/themeContext";
 import * as Font from "expo-font";
@@ -66,6 +67,10 @@ const AppContent = () => {
           <Stack.Screen
             name="GroupChatSettings"
             component={GroupChatSettings}
+          />
+          <Stack.Screen
+            name="BlockedConnections"
+            component={BlockedConnections}
           />
         </>
       )}

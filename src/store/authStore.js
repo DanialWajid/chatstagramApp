@@ -170,6 +170,16 @@ export const useAuthStore = create((set) => ({
       console.log("Two factor detected", data.twoFactorRequired);
 
       if (!response.ok) {
+        // Check if it's a ban error
+        if (data.isBanned) {
+          const banMessage = data.message || "Your account has been banned.";
+          set({
+            isAuthenticated: false,
+            twoFactorRequired: false,
+            error: banMessage,
+          });
+          throw new Error(banMessage);
+        }
         throw new Error(data.message || "Invalid Email or Password");
       }
 
@@ -206,8 +216,9 @@ export const useAuthStore = create((set) => ({
       set({
         isAuthenticated: false,
         twoFactorRequired: false,
+        error: error.message,
       });
-      return { success: false, error: error.message };
+      throw error; // Re-throw the error so it can be caught in the component
     }
   },
 

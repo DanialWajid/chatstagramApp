@@ -21,6 +21,7 @@ import {
   MessageCircle,
   Palette,
   Plus,
+  UserX,
 } from "lucide-react-native";
 import ChangePasswordModal from "./ChangePasswordModal";
 import { useTheme } from "../store/themeContext";
@@ -79,6 +80,7 @@ const Navbar = () => {
     ExploreFriends: "Explore Connections",
     FriendRequests: "Connections Requests",
     GroupChatSettings: "Group Settings",
+    BlockedConnections: "Blocked Connections",
     Login: "Login",
     Signup: "Sign up",
   };
@@ -175,6 +177,25 @@ const Navbar = () => {
             </Text>
           </TouchableOpacity>
 
+          {/* Blocked Connections */}
+          <TouchableOpacity
+            style={[styles.menuItem, { backgroundColor: theme.navbar }]}
+            onPress={() => {
+              navigation.navigate("BlockedConnections");
+              toggleMenu();
+            }}
+          >
+            <UserX
+              width={20}
+              height={20}
+              color={theme.text}
+              style={styles.menuIcon}
+            />
+            <Text style={[styles.menuText, { color: theme.text }]}>
+              Blocked Connections
+            </Text>
+          </TouchableOpacity>
+
           {/* Move Create Group Chat into Navbar menu */}
           <TouchableOpacity
             style={[styles.menuItem, { backgroundColor: theme.navbar }]}
@@ -235,10 +256,10 @@ const Navbar = () => {
             <LogOut
               width={20}
               height={20}
-              color={theme.text}
+              color="orange"
               style={styles.menuIcon}
             />
-            <Text style={[styles.menuText, { color: theme.text }]}>Logout</Text>
+            <Text style={[styles.menuText, { color: "orange" }]}>Logout</Text>
           </TouchableOpacity>
         </Animated.View>
       )}
