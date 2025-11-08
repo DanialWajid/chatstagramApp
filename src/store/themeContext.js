@@ -17,7 +17,7 @@ export const themes = {
     buttonText: "#fff",
     error: "#ef4444",
     success: "#10b981",
-    navbar: "#000000",
+    navbar: "#1a202c",
     gradient: ["#4c1d95", "#7e22ce", "#6b21a8"],
     // Add more as needed
   },
@@ -35,7 +35,7 @@ export const themes = {
     buttonText: "#fff",
     error: "#ef4444",
     success: "#10b981",
-    navbar: "#ffffff",
+    navbar: "#1a202c",
     gradient: ["#f0f9ff", "#e0e7ff", "#c7d2fe"],
     // Add more as needed
   },

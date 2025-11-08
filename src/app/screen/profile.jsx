@@ -22,6 +22,7 @@ import {
   User,
   ArrowLeft,
   Copy,
+  Check,
 } from "lucide-react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import {
@@ -125,7 +126,7 @@ const Profile = () => {
     setShowCopySuccess(true);
     setTimeout(() => {
       setShowCopySuccess(false);
-    }, 3000);
+    }, 2000);
   };
 
   if (loading) {
@@ -210,20 +211,22 @@ const Profile = () => {
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.copyButton, { backgroundColor: theme.accent }]}
+                  style={[
+                    styles.copyButton,
+                    {
+                      backgroundColor: showCopySuccess
+                        ? "#10b981"
+                        : theme.accent,
+                    },
+                  ]}
                   onPress={handleCopyUserId}
                 >
-                  <Copy size={18} color={theme.buttonText} />
+                  {showCopySuccess ? (
+                    <Check size={18} color={theme.buttonText} />
+                  ) : (
+                    <Copy size={18} color={theme.buttonText} />
+                  )}
                 </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Copy Success Message */}
-            {showCopySuccess && (
-              <View style={styles.copySuccessContainer}>
-                <Text style={styles.copySuccessText}>
-                  User ID copied successfully ✅
-                </Text>
               </View>
             )}
 

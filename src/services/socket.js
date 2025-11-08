@@ -5,14 +5,16 @@ class SocketService {
     this.socket = null;
     this.isConnected = false;
     this.currentUser = null;
+    this.hasJoinedChat = false; // helps avoid duplicate join events
   }
 
+  // ---------------------- CONNECTION ----------------------
   connect(userId, userName) {
     if (!this.socket) {
       console.log("Connecting to socket server...");
       this.currentUser = { _id: userId, name: userName };
 
-      this.socket = io("http://192.168.100.15:8000", {
+      this.socket = io("http://192.168.0.109:8000", {
         transports: ["websocket"],
         timeout: 60000,
         forceNew: true,
@@ -31,6 +33,7 @@ class SocketService {
       this.socket.on("disconnect", () => {
         console.log("Disconnected from server");
         this.isConnected = false;
+        this.hasJoinedChat = false;
       });
 
       this.socket.on("connect_error", (error) => {
@@ -47,13 +50,20 @@ class SocketService {
       this.socket = null;
       this.isConnected = false;
       this.currentUser = null;
+      this.hasJoinedChat = false;
     }
   }
 
+  getConnectionStatus() {
+    return this.isConnected;
+  }
+
+  // ---------------------- CHAT ----------------------
   joinChat(chatId) {
     if (this.socket && this.isConnected) {
       console.log("Joining chat:", chatId);
       this.socket.emit("join chat", chatId);
+      this.hasJoinedChat = true;
     } else {
       console.log("Socket not connected, cannot join chat");
     }
@@ -68,82 +78,9 @@ class SocketService {
     }
   }
 
-  initiateCall(callData) {
-    if (this.socket && this.isConnected) {
-      console.log("[v0] Initiating call:", callData);
-      this.socket.emit("call:initiate", callData);
-    }
-  }
-
-  acceptCall(callData) {
-    if (this.socket && this.isConnected) {
-      console.log("[v0] Accepting call:", callData);
-      this.socket.emit("call:accept", callData);
-    }
-  }
-
-  rejectCall(callData) {
-    if (this.socket && this.isConnected) {
-      console.log("[v0] Rejecting call:", callData);
-      this.socket.emit("call:reject", callData);
-    }
-  }
-
-  endCall(callData) {
-    if (this.socket && this.isConnected) {
-      console.log("[v0] Ending call:", callData);
-      this.socket.emit("call:end", callData);
-    }
-  }
-
-  onIncomingCall(callback) {
-    if (this.socket) {
-      this.socket.on("call:incoming", (data) => {
-        console.log("[v0] Incoming call event:", data);
-        callback(data);
-      });
-    }
-  }
-
-  onCallAccepted(callback) {
-    if (this.socket) {
-      this.socket.on("call:accepted", (data) => {
-        console.log("[v0] Call accepted event:", data);
-        callback(data);
-      });
-    }
-  }
-
-  onCallRejected(callback) {
-    if (this.socket) {
-      this.socket.on("call:rejected", (data) => {
-        console.log("[v0] Call rejected event:", data);
-        callback(data);
-      });
-    }
-  }
-
-  onCallEnded(callback) {
-    if (this.socket) {
-      this.socket.on("call:ended", (data) => {
-        console.log("[v0] Call ended event:", data);
-        callback(data);
-      });
-    }
-  }
-
-  offCallEvents() {
-    if (this.socket) {
-      this.socket.off("call:incoming");
-      this.socket.off("call:accepted");
-      this.socket.off("call:rejected");
-      this.socket.off("call:ended");
-    }
-  }
-
   onMessageReceived(callback) {
     if (this.socket) {
-      this.socket.on("message recieved", (message) => {
+      this.socket.on("message received", (message) => {
         console.log("Message received via socket:", message);
         callback(message);
       });
@@ -152,27 +89,22 @@ class SocketService {
 
   offMessageReceived() {
     if (this.socket) {
-      this.socket.off("message recieved");
+      this.socket.off("message received");
     }
   }
 
+  // ---------------------- TYPING ----------------------
   startTyping(chatId) {
     if (this.socket && this.isConnected && this.currentUser) {
       console.log("Start typing in chat:", chatId);
-      this.socket.emit("typing", {
-        chatId,
-        user: this.currentUser,
-      });
+      this.socket.emit("typing", { chatId, user: this.currentUser });
     }
   }
 
   stopTyping(chatId) {
     if (this.socket && this.isConnected && this.currentUser) {
       console.log("Stop typing in chat:", chatId);
-      this.socket.emit("stop typing", {
-        chatId,
-        user: this.currentUser,
-      });
+      this.socket.emit("stop typing", { chatId, user: this.currentUser });
     }
   }
 
@@ -201,8 +133,101 @@ class SocketService {
     }
   }
 
-  getConnectionStatus() {
-    return this.isConnected;
+  // ---------------------- VOICE CALLS ----------------------
+  initiateVoiceCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Initiating voice call:", callData);
+      this.socket.emit("call:initiate", callData);
+    }
+  }
+
+  acceptVoiceCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Accepting voice call:", callData);
+      this.socket.emit("call:accept", callData);
+    }
+  }
+
+  rejectVoiceCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Rejecting voice call:", callData);
+      this.socket.emit("call:reject", callData);
+    }
+  }
+
+  endVoiceCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Ending voice call:", callData);
+      this.socket.emit("call:end", callData);
+    }
+  }
+
+  // ---------------------- VIDEO CALLS ----------------------
+  initiateVideoCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Initiating video call:", callData);
+      this.socket.emit("videocall:initiate", callData);
+    }
+  }
+
+  acceptVideoCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Accepting video call:", callData);
+      this.socket.emit("videocall:accept", callData);
+    }
+  }
+
+  rejectVideoCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Rejecting video call:", callData);
+      this.socket.emit("videocall:reject", callData);
+    }
+  }
+
+  endVideoCall(callData) {
+    if (this.socket && this.isConnected) {
+      console.log("[v0] Ending video call:", callData);
+      this.socket.emit("videocall:end", callData);
+    }
+  }
+
+  // ---------------------- LISTENERS ----------------------
+  onVoiceCallEvents(callbacks) {
+    if (this.socket) {
+      this.socket.on("call:initiate", callbacks.onInitiate);
+      this.socket.on("call:accept", callbacks.onAccept);
+      this.socket.on("call:reject", callbacks.onReject);
+      this.socket.on("call:end", callbacks.onEnd);
+      this.socket.on("call:timeout", callbacks.onTimeout);
+    }
+  }
+
+  onVideoCallEvents(callbacks) {
+    if (this.socket) {
+      this.socket.on("videocall:initiate", callbacks.onInitiate);
+      this.socket.on("videocall:accept", callbacks.onAccept);
+      this.socket.on("videocall:reject", callbacks.onReject);
+      this.socket.on("videocall:end", callbacks.onEnd);
+      this.socket.on("videocall:timeout", callbacks.onTimeout);
+    }
+  }
+
+  offCallEvents() {
+    if (this.socket) {
+      // Voice
+      this.socket.off("call:initiate");
+      this.socket.off("call:accept");
+      this.socket.off("call:reject");
+      this.socket.off("call:end");
+      this.socket.off("call:timeout");
+
+      // Video
+      this.socket.off("videocall:initiate");
+      this.socket.off("videocall:accept");
+      this.socket.off("videocall:reject");
+      this.socket.off("videocall:end");
+      this.socket.off("videocall:timeout");
+    }
   }
 }
 
