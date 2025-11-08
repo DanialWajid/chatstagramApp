@@ -62,7 +62,6 @@ import VideoMessage from "../../components/videoMessage";
 import FileMessage from "../../components/fileMessage";
 import { VoiceRecorderControls } from "../../components/voiceNotes";
 import VoiceCallModal from "../../components/voiceCallModal";
-import VideoCallModal from "../../components/videoCall";
 import CallInfoMessage from "../../components/call-info-message";
 import { handleExportChat } from "../../utils/chatMenuUtils";
 import VideoCallModal from "../../components/VideoCallModal";

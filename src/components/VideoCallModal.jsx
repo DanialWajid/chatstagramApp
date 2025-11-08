@@ -11,7 +11,7 @@ import {
 import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react-native";
 import { useTheme } from "../store/themeContext";
 import { useEffect, useRef } from "react";
-import { RtcSurfaceView, RenderModeType } from "react-native-agora"; // ✅ Fixed import
+import { RtcSurfaceView, RenderModeType } from "react-native-agora";
 
 export default function VideoCallModal({
   visible,
@@ -99,7 +99,7 @@ export default function VideoCallModal({
                   <RtcSurfaceView
                     canvas={{
                       uid: remoteUid,
-                      renderMode: RenderModeType.RenderModeHidden, // ✅ Fixed enum
+                      renderMode: RenderModeType.RenderModeHidden,
                     }}
                     style={styles.videoStream}
                   />
@@ -124,7 +124,7 @@ export default function VideoCallModal({
                 <RtcSurfaceView
                   canvas={{
                     uid: 0,
-                    renderMode: RenderModeType.RenderModeHidden, // ✅ Fixed enum
+                    renderMode: RenderModeType.RenderModeHidden,
                   }}
                   zOrderMediaOverlay={true}
                   style={styles.videoStream}
@@ -186,42 +186,18 @@ export default function VideoCallModal({
           {/* Buttons */}
           {isRinging && !inCall ? (
             <View style={styles.controls}>
-              <TouchableOpacity
-                style={[styles.acceptBtn, { backgroundColor: "#10b981" }]}
-                onPress={onAccept}
-              >
+              <TouchableOpacity style={styles.acceptBtn} onPress={onAccept}>
                 <Video size={24} color="#fff" />
-                <Text
-                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
-                >
-                  Accept
-                </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.rejectBtn, { backgroundColor: "#ef4444" }]}
-                onPress={onReject}
-              >
+              <TouchableOpacity style={styles.rejectBtn} onPress={onReject}>
                 <PhoneOff size={24} color="#fff" />
-                <Text
-                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
-                >
-                  Reject
-                </Text>
               </TouchableOpacity>
             </View>
           ) : isCalling && !inCall ? (
             <View style={styles.controls}>
-              <TouchableOpacity
-                style={[styles.endBtn, { backgroundColor: "#ef4444" }]}
-                onPress={onEnd}
-              >
+              <TouchableOpacity style={styles.endBtn} onPress={onEnd}>
                 <PhoneOff size={24} color="#fff" />
-                <Text
-                  style={{ color: "#fff", marginTop: 4, fontWeight: "600" }}
-                >
-                  Cancel
-                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -231,51 +207,33 @@ export default function VideoCallModal({
                 showVideoStreams && styles.videoControls,
               ]}
             >
-              <TouchableOpacity
-                style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
-                onPress={onToggleMute}
-              >
+              <TouchableOpacity style={styles.ctrlBtn} onPress={onToggleMute}>
                 {isVideoMuted ? (
-                  <MicOff size={20} color={theme.text} />
+                  <MicOff size={20} color="#fff" />
                 ) : (
-                  <Mic size={20} color={theme.text} />
+                  <Mic size={20} color="#fff" />
                 )}
-                <Text style={{ color: theme.text, marginTop: 2, fontSize: 11 }}>
-                  {isVideoMuted ? "Unmute" : "Mute"}
-                </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
-                onPress={onToggleCamera}
-              >
+              <TouchableOpacity style={styles.ctrlBtn} onPress={onToggleCamera}>
                 {isCameraOn ? (
-                  <Video size={20} color={theme.text} />
+                  <Video size={20} color="#fff" />
                 ) : (
-                  <VideoOff size={20} color={theme.text} />
+                  <VideoOff size={20} color="#fff" />
                 )}
-                <Text style={{ color: theme.text, marginTop: 2, fontSize: 11 }}>
-                  {isCameraOn ? "Camera On" : "Camera Off"}
-                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.ctrlBtn, { backgroundColor: theme.input }]}
+                style={styles.ctrlBtn}
                 onPress={onToggleSpeaker}
               >
-                <Text style={{ color: theme.text, fontSize: 11 }}>
-                  {speakerOn ? "Earpiece" : "Speaker"}
+                <Text style={styles.ctrlLabel}>
+                  {speakerOn ? "Ear" : "Spk"}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.endBtn, { backgroundColor: "#ef4444" }]}
-                onPress={onEnd}
-              >
+              <TouchableOpacity style={styles.endBtn} onPress={onEnd}>
                 <PhoneOff size={20} color="#fff" />
-                <Text style={{ color: "#fff", marginTop: 2, fontSize: 11 }}>
-                  End
-                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -329,45 +287,59 @@ const styles = StyleSheet.create({
   },
   controls: {
     flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    gap: 16,
     flexWrap: "wrap",
+    marginTop: 16,
   },
   videoControls: {
     position: "absolute",
     bottom: 20,
     left: 16,
     right: 16,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 50,
     padding: 12,
   },
   ctrlBtn: {
-    flex: 1,
-    minWidth: "45%",
-    paddingVertical: 6,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#333",
+  },
+  ctrlLabel: {
+    fontSize: 10,
+    color: "#fff",
+    textAlign: "center",
   },
   acceptBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#10b981",
   },
   rejectBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#ef4444",
   },
   endBtn: {
-    flex: 1,
-    minWidth: "45%",
-    paddingVertical: 6,
-    borderRadius: 10,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#ef4444",
   },
   videoContainer: {
     flex: 1,
