@@ -14,7 +14,7 @@ class SocketService {
       console.log("Connecting to socket server...");
       this.currentUser = { _id: userId, name: userName };
 
-      this.socket = io("http://192.168.0.109:8000", {
+      this.socket = io("http://192.168.100.15:8000", {
         transports: ["websocket"],
         timeout: 60000,
         forceNew: true,
