@@ -25,12 +25,12 @@ import {
   User,
   Send,
   Users,
-  Settings,
   Bot,
   Paperclip,
   File as ImageIcon,
   Download,
   Phone,
+  Video,
   Mic,
   Play,
   Pause,
@@ -55,14 +55,14 @@ import {
   ClientRoleType,
   AudioProfileType,
   AudioScenarioType,
-  ConnectionStateType,
-  ConnectionChangedReasonType,
+  VideoProfileType,
 } from "react-native-agora";
-import { Audio, Video, ResizeMode } from "expo-av";
+import { Audio, Video as VideoComponent, ResizeMode } from "expo-av";
 import VideoMessage from "../../components/videoMessage";
 import FileMessage from "../../components/fileMessage";
 import { VoiceRecorderControls } from "../../components/voiceNotes";
 import VoiceCallModal from "../../components/voiceCallModal";
+import VideoCallModal from "../../components/videoCall";
 import CallInfoMessage from "../../components/call-info-message";
 import { handleExportChat } from "../../utils/chatMenuUtils";
 
@@ -193,6 +193,7 @@ const DateSeparator = ({ date }) => {
     </View>
   );
 };
+
 const AudioMessagePlayer = ({ uri }) => {
   const soundRef = useRef(null);
   const [status, setStatus] = useState(null);
@@ -371,8 +372,6 @@ export default function ChatMessage({
   const [socketConnected, setSocketConnected] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [showFileOptions, setShowFileOptions] = useState(false);
-  const [previewVisible, setPreviewVisible] = useState(false);
-  const [previewFile, setPreviewFile] = useState(null);
 
   const [imagePreview, setImagePreview] = useState({
     visible: false,
@@ -408,7 +407,21 @@ export default function ChatMessage({
   const [calleeInfo, setCalleeInfo] = useState(null);
   const [showMenuModal, setShowMenuModal] = useState(false);
 
-  const engineRef = useRef(null); // Changed from agoraEngineRef to engineRef to match error
+  const [videoCalling, setVideoCalling] = useState(false);
+  const [inVideoCall, setInVideoCall] = useState(false);
+  const [isVideoRinging, setIsVideoRinging] = useState(false);
+  const [incomingVideoCallFrom, setIncomingVideoCallFrom] = useState(null);
+  const [videoCallTimeout, setVideoCallTimeout] = useState(null);
+  const [videoCallStartTime, setVideoCallStartTime] = useState(null);
+  const [videoCallDuration, setVideoCallDuration] = useState(0);
+  const [videoCameraOn, setVideoCameraOn] = useState(true);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [videoRemoteUid, setVideoRemoteUid] = useState(null);
+  const [videoLocalUid, setVideoLocalUid] = useState(0);
+  const [videoCalleeInfo, setVideoCalleeInfo] = useState(null);
+  const [videoSpeakerOn, setVideoSpeakerOn] = useState(false);
+
+  const engineRef = useRef(null);
   const agoraHandlerRef = useRef(null);
 
   const formatMillis = (millis) => {
@@ -474,7 +487,6 @@ export default function ChatMessage({
 
       await rec.stopAndUnloadAsync();
 
-      // ✅ get final status after stopping
       const status = await rec.getStatusAsync();
       const finalDuration = status?.durationMillis || 0;
 
@@ -487,10 +499,9 @@ export default function ChatMessage({
       }
 
       setIsRecording(false);
-      setRecordingDuration(finalDuration); // ✅ update duration properly
+      setRecordingDuration(finalDuration);
 
       if (uri) {
-        // get file size and set as selected file to reuse existing send flow
         const info = await FileSystem.getInfoAsync(uri);
         const name = `voice_${Date.now()}.m4a`;
         const fileObj = {
@@ -519,7 +530,6 @@ export default function ChatMessage({
   const stopAndSendVoiceRecording = async () => {
     const fileObj = await stopVoiceRecording();
     if (fileObj && fileObj.uri) {
-      // send immediately with the recorded audio file
       await sendMessage(fileObj);
     }
   };
@@ -542,17 +552,20 @@ export default function ChatMessage({
     setIsRecording(false);
   };
 
-  const { user: authUser } = useAuthStore(); // Renamed to avoid conflict with the prop 'user'
+  const { user: authUser } = useAuthStore();
   const navigation = useNavigation();
   const route = useRoute();
   const flatListRef = useRef(null);
 
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
-  const API_URL = "http://192.168.100.15:8000/api";
+  const API_URL = "http://192.168.0.110:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
   const { chatId } = route.params;
+
+  const chatData = route.params?.chatData;
+  const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
 
   const fetchAgoraToken = async (channelName, uid = 0) => {
     try {
@@ -570,18 +583,22 @@ export default function ChatMessage({
   const sendCallInfoMessage = async (
     callStatus,
     duration = 0,
-    callerName = ""
+    callerName = "",
+    callType = "voice"
   ) => {
     try {
       const token = await SecureStore.getItemAsync("token");
 
       const callInfoData = {
-        content: `Call ${callStatus}`,
+        content: `${
+          callType === "video" ? "Video" : "Voice"
+        } call ${callStatus}`,
         chatId,
         type: "call",
-        callStatus, // "missed", "rejected", "ended"
-        duration, // in seconds
+        callStatus,
+        duration,
         callerName,
+        callType,
       };
 
       const response = await axios.post(`${API_URL}/message/`, callInfoData, {
@@ -623,27 +640,17 @@ export default function ChatMessage({
           style: "destructive",
           onPress: async () => {
             try {
-              console.log("Deleting chat with ID:", chatId);
               const deleteUrl = `${API_URL}/chat/${chatId}`;
-              console.log("Delete URL:", deleteUrl);
-
               const token = await SecureStore.getItemAsync("token");
-              console.log("Token present:", !!token);
 
-              const response = await axios.delete(deleteUrl, {
+              await axios.delete(deleteUrl, {
                 headers: { Authorization: `Bearer ${token}` },
               });
 
-              console.log("Delete response:", response.data);
               Alert.alert("Success", "Chat deleted successfully");
               navigation.navigate("Home");
             } catch (error) {
               console.error("Delete chat error:", error);
-              console.error("Error details:", {
-                message: error.message,
-                status: error.response?.status,
-                data: error.response?.data,
-              });
               Alert.alert("Error", "Failed to delete chat. Please try again.");
             }
           },
@@ -666,11 +673,12 @@ export default function ChatMessage({
       console.log("ChatMessage component unmounting");
       cleanupSocket();
       endVoiceCall();
+      endVideoCall();
       try {
         cancelVoiceRecording();
       } catch {}
     };
-  }, [chatId, authUser._id]); // Use authUser._id here
+  }, [chatId, authUser._id]);
 
   const groupMessagesByDate = (messages) => {
     const grouped = [];
@@ -700,7 +708,7 @@ export default function ChatMessage({
   const setupSocket = () => {
     console.log("Setting up socket connection...");
 
-    SocketService.connect(authUser._id, authUser.name); // Use authUser._id and authUser.name
+    SocketService.connect(authUser._id, authUser.name);
 
     const checkConnection = setInterval(() => {
       const connected = SocketService.getConnectionStatus();
@@ -733,7 +741,6 @@ export default function ChatMessage({
     SocketService.onTyping((data) => {
       console.log("Typing event received:", data);
       if (data.user._id !== authUser._id) {
-        // Use authUser._id
         setTypingUsers((prev) => {
           const exists = prev.find((u) => u._id === data.user._id);
           if (!exists) {
@@ -750,10 +757,9 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("call:initiate", (data) => {
-      console.log("[v0] Incoming call from:", data.from);
+      console.log("[v0] Incoming voice call from:", data.from);
 
       if (data.from._id === authUser._id) {
-        // Use authUser._id
         console.log("[v0] Ignoring own call event");
         return;
       }
@@ -762,48 +768,106 @@ export default function ChatMessage({
       setIsRinging(true);
 
       const timeout = setTimeout(() => {
-        console.log("[v0] Call timeout - no response");
+        console.log("[v0] Voice call timeout - no response");
         setIsRinging(false);
         setIncomingCallFrom(null);
-        Alert.alert("Missed Call", `Call from ${data.from.name} ended`);
-        sendCallInfoMessage("missed", 0, data.from.name);
+        Alert.alert("Missed Call", `Voice call from ${data.from.name} ended`);
+        sendCallInfoMessage("missed", 0, data.from.name, "voice");
       }, 30000);
       setCallTimeout(timeout);
     });
 
     SocketService.socket?.on("call:accept", (data) => {
-      console.log("[v0] Call accepted by:", data.from);
+      console.log("[v0] Voice call accepted by:", data.from);
       setCalling(false);
       setIsRinging(false);
       setCallStartTime(Date.now());
-      startAgoraConnection();
+      startAgoraConnection("voice");
     });
 
     SocketService.socket?.on("call:reject", (data) => {
-      console.log("[v0] Call rejected by:", data.from);
+      console.log("[v0] Voice call rejected by:", data.from);
       setCalleeInfo(null);
       setCalling(false);
       setIsRinging(false);
       setIncomingCallFrom(null);
 
-      // Send call rejected message
-      sendCallInfoMessage("rejected");
+      sendCallInfoMessage("rejected", 0, "", "voice");
 
       Alert.alert("Call Rejected", "The recipient rejected your call.");
     });
 
-    // Socket listener for call timeout
     SocketService.socket?.on("call:timeout", (data) => {
-      console.log("[v0] Call timed out");
+      console.log("[v0] Voice call timed out");
       setCalleeInfo(null);
       setCalling(false);
       setIsRinging(false);
       setIncomingCallFrom(null);
 
-      // Send call missed message
-      sendCallInfoMessage("missed");
+      sendCallInfoMessage("missed", 0, "", "voice");
 
       Alert.alert("Call Missed", "The recipient did not answer the call.");
+    });
+
+    SocketService.socket?.on("videocall:initiate", (data) => {
+      console.log("[v0] Incoming video call from:", data.from);
+
+      if (data.from._id === authUser._id) {
+        console.log("[v0] Ignoring own video call event");
+        return;
+      }
+
+      setIncomingVideoCallFrom(data.from);
+      setIsVideoRinging(true);
+
+      const timeout = setTimeout(() => {
+        console.log("[v0] Video call timeout - no response");
+        setIsVideoRinging(false);
+        setIncomingVideoCallFrom(null);
+        Alert.alert("Missed Call", `Video call from ${data.from.name} ended`);
+        sendCallInfoMessage("missed", 0, data.from.name, "video");
+      }, 30000);
+      setVideoCallTimeout(timeout);
+    });
+
+    SocketService.socket?.on("videocall:accept", (data) => {
+      console.log("[v0] Video call accepted by:", data.from);
+      setVideoCalling(false);
+      setIsVideoRinging(false);
+      setVideoCallStartTime(Date.now());
+      startAgoraConnection("video");
+    });
+
+    SocketService.socket?.on("videocall:reject", (data) => {
+      console.log("[v0] Video call rejected by:", data.from);
+      setVideoCalleeInfo(null);
+      setVideoCalling(false);
+      setIsVideoRinging(false);
+      setIncomingVideoCallFrom(null);
+
+      sendCallInfoMessage("rejected", 0, "", "video");
+
+      Alert.alert("Call Rejected", "The recipient rejected your video call.");
+    });
+
+    SocketService.socket?.on("videocall:timeout", (data) => {
+      console.log("[v0] Video call timed out");
+      setVideoCalleeInfo(null);
+      setVideoCalling(false);
+      setIsVideoRinging(false);
+      setIncomingVideoCallFrom(null);
+
+      sendCallInfoMessage("missed", 0, "", "video");
+
+      Alert.alert(
+        "Call Missed",
+        "The recipient did not answer the video call."
+      );
+    });
+
+    SocketService.socket?.on("videocall:end", (data) => {
+      console.log("[v0] Video call ended by:", data.from);
+      endVideoCall();
     });
 
     return () => {
@@ -819,6 +883,10 @@ export default function ChatMessage({
     SocketService.socket?.off("call:accept");
     SocketService.socket?.off("call:reject");
     SocketService.socket?.off("call:end");
+    SocketService.socket?.off("videocall:initiate");
+    SocketService.socket?.off("videocall:accept");
+    SocketService.socket?.off("videocall:reject");
+    SocketService.socket?.off("videocall:end");
     SocketService.hasJoinedChat = false;
     setTypingUsers([]);
   };
@@ -1101,8 +1169,7 @@ export default function ChatMessage({
   };
 
   const getChatDisplayInfo = () => {
-    // const chatData = route.params?.chatData; // Assuming chatData is passed via route params
-    const chatData = route.params?.chatData; // <-- Fix: Added declaration for chatData
+    const chatData = route.params?.chatData;
     if (!chatData) return { name: "Chat", image: null, isGroup: false };
 
     if (chatData.isGroupChat) {
@@ -1113,7 +1180,7 @@ export default function ChatMessage({
         memberCount: chatData.users.length,
       };
     } else {
-      const otherUser = chatData.users.find((u) => u._id !== authUser._id); // Use authUser._id
+      const otherUser = chatData.users.find((u) => u._id !== authUser._id);
       return {
         name: otherUser?.name || "Unknown User",
         image: otherUser?.profileImage || otherUser?.pic,
@@ -1123,7 +1190,7 @@ export default function ChatMessage({
   };
 
   const navigateToGroupSettings = () => {
-    const chatData = route.params?.chatData; // <-- Fix: Added declaration for chatData
+    const chatData = route.params?.chatData;
     if (chatData?.isGroupChat) {
       navigation.navigate("GroupChatSettings", {
         chatId: chatId,
@@ -1292,7 +1359,7 @@ export default function ChatMessage({
 
   const MessageBubble = ({ item }) => {
     const { theme } = useTheme();
-    const isMyMessage = item.sender._id === authUser._id; // Use authUser._id
+    const isMyMessage = item.sender._id === authUser._id;
     const isCallInfoMessage = item.type === "call";
     const isFileMessage = item.type === "file" && item.fileUrl;
     const msgKey = getMessageKey(item);
@@ -1390,12 +1457,11 @@ export default function ChatMessage({
           isMyMessage ? styles.myMessageWrapper : styles.theirMessageWrapper,
         ]}
       >
-        {!isMyMessage &&
-          route.params?.chatData?.isGroupChat && ( // <-- Fix: Use route.params?.chatData to access isGroupChat
-            <Text style={[styles.senderName, { color: theme.secondaryText }]}>
-              {item.sender.name}
-            </Text>
-          )}
+        {!isMyMessage && route.params?.chatData?.isGroupChat && (
+          <Text style={[styles.senderName, { color: theme.secondaryText }]}>
+            {item.sender.name}
+          </Text>
+        )}
 
         <View
           style={[
@@ -1441,7 +1507,7 @@ export default function ChatMessage({
                           styles.inlineActionBtn,
                           {
                             backgroundColor: isMyMessage
-                              ? "rgba(255,255,255,0.2)"
+                              ? "rgba(255,255,256,0.2)"
                               : "#00000020",
                           },
                         ]}
@@ -1462,7 +1528,7 @@ export default function ChatMessage({
                           styles.inlineActionBtn,
                           {
                             backgroundColor: isMyMessage
-                              ? "rgba(255,255,255,0.2)"
+                              ? "rgba(255,255,256,0.2)"
                               : "#00000020",
                           },
                         ]}
@@ -1684,7 +1750,6 @@ export default function ChatMessage({
       const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
       setCalleeInfo(otherUser);
 
-      // Emit call initiation event to other user
       SocketService.socket?.emit("call:initiate", {
         to: otherUser?._id,
         from: {
@@ -1694,7 +1759,7 @@ export default function ChatMessage({
         chatId,
       });
 
-      console.log("[v0] Call initiated to:", otherUser?.name);
+      console.log("[v0] Voice call initiated to:", otherUser?.name);
     } catch (e) {
       console.log("[v0] initiateVoiceCall error:", e.message);
       Alert.alert("Call Failed", "Unable to initiate the call.");
@@ -1702,8 +1767,63 @@ export default function ChatMessage({
     }
   };
 
-  const startAgoraConnection = async () => {
+  const initiateVideoCall = async () => {
     try {
+      if (!SocketService.getConnectionStatus()) {
+        Alert.alert(
+          "Connection Error",
+          "Socket is not connected. Please try again."
+        );
+        return;
+      }
+
+      const micOk = await requestMicrophonePermission();
+      if (!micOk) return;
+
+      setVideoCalling(true);
+
+      const chatData = route.params?.chatData;
+      const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+      setVideoCalleeInfo(otherUser);
+
+      console.log(
+        "[v0] 📹 Initiating video call to:",
+        otherUser?.name,
+        "ID:",
+        otherUser?._id
+      );
+
+      SocketService.socket?.emit("videocall:initiate", {
+        to: otherUser?._id,
+        from: {
+          _id: authUser._id,
+          name: authUser.name,
+        },
+        chatId,
+      });
+    } catch (e) {
+      console.log("[v0] ❌ initiateVideoCall error:", e.message);
+      Alert.alert("Call Failed", "Unable to initiate the video call.");
+      setVideoCalling(false);
+    }
+  };
+
+  const startAgoraConnection = async (callType = "voice") => {
+    try {
+      if (callType === "video") {
+        console.log("[v0] Requesting camera permissions for video call...");
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Permission required",
+            "Camera permission is needed for video calls."
+          );
+          setVideoCalling(false);
+          return;
+        }
+        console.log("[v0] Camera permissions granted");
+      }
+
       if (!AGORA_APP_ID) {
         Alert.alert(
           "Missing config",
@@ -1714,13 +1834,18 @@ export default function ChatMessage({
 
       const token = await fetchAgoraToken(chatId, 0);
       if (!token) {
-        setCalling(false);
+        if (callType === "voice") {
+          setCalling(false);
+        } else {
+          setVideoCalling(false);
+        }
         Alert.alert("Token Error", "Failed to get Agora token.");
         return;
       }
 
       let engine = engineRef.current;
       if (!engine) {
+        console.log("[v0] Creating new Agora engine...");
         engine = createAgoraRtcEngine();
         engineRef.current = engine;
         engine.initialize({
@@ -1742,75 +1867,82 @@ export default function ChatMessage({
         } catch (e) {
           console.log("[v0] enable audio/route error:", e.message);
         }
-      }
 
-      if (
-        agoraHandlerRef.current &&
-        typeof engine.unregisterEventHandler === "function"
-      ) {
-        try {
-          engine.unregisterEventHandler(agoraHandlerRef.current);
-        } catch {}
+        if (callType === "video") {
+          try {
+            console.log("[v0] Enabling video...");
+            engine.enableVideo && engine.enableVideo();
+            engine.enableLocalVideo && engine.enableLocalVideo(true);
+            console.log("[v0] Starting video preview...");
+            engine.startPreview && engine.startPreview();
+            if (engine.setVideoProfile) {
+              engine.setVideoProfile(VideoProfileType.VideoProfile360p);
+            }
+            console.log("[v0] Video enabled and preview started");
+          } catch (e) {
+            console.log("[v0] enable video error:", e.message);
+          }
+        }
       }
 
       const handler = {
-        onJoinChannelSuccess: () => {
-          setInCall(true);
-          setCalling(false);
-          setCallStartTime(Date.now());
-        },
-        onUserJoined: (uid) => {
-          setRemoteUid(uid);
-        },
-        onUserOffline: (uid) => {
-          if (remoteUid === uid) setRemoteUid(null);
-        },
-        onError: (err) => {
-          console.log("[v0] Agora Error:", err);
-        },
-        onTokenPrivilegeWillExpire: async () => {
-          try {
-            const newToken = await fetchAgoraToken(chatId, 0);
-            if (newToken) {
-              engine.renewToken && engine.renewToken(newToken);
-            }
-          } catch (e) {
-            console.log("[v0] renew token error:", e.message);
+        onJoinChannelSuccess: (connection, elapsed) => {
+          console.log("[v0] onJoinChannelSuccess:", connection, elapsed);
+          if (callType === "video") {
+            setVideoLocalUid(connection.localUid || 0);
+            console.log("[v0] Local video UID:", connection.localUid);
+          }
+          if (callType === "voice") {
+            setInCall(true);
+            setCalling(false);
+            setCallStartTime(Date.now());
+          } else {
+            setInVideoCall(true);
+            setVideoCalling(false);
+            setVideoCallStartTime(Date.now());
           }
         },
-        onConnectionStateChanged: async (state, reason) => {
-          if (
-            reason ===
-              ConnectionChangedReasonType.ConnectionChangedRejectedByServer ||
-            reason ===
-              ConnectionChangedReasonType.ConnectionChangedTokenExpired ||
-            reason === ConnectionChangedReasonType.ConnectionChangedInvalidToken
-          ) {
-            try {
-              const newToken = await fetchAgoraToken(chatId, 0);
-              if (newToken) {
-                engine.renewToken && engine.renewToken(newToken);
-              }
-            } catch (e) {
-              console.log("[v0] renew on state change error:", e.message);
-            }
+        onUserJoined: (connection, remoteUid, elapsed) => {
+          console.log("[v0] onUserJoined:", remoteUid);
+          if (callType === "voice") {
+            setRemoteUid(remoteUid);
+          } else {
+            setVideoRemoteUid(remoteUid);
+            console.log("[v0] Remote video UID:", remoteUid);
           }
-
-          if (state === ConnectionStateType.ConnectionStateDisconnected) {
-            console.log("[v0] Agora disconnected (reason:", reason, ")");
+        },
+        onUserOffline: (connection, remoteUid, reason) => {
+          console.log("[v0] onUserOffline:", remoteUid, reason);
+          if (callType === "voice") {
+            setRemoteUid(null);
+          } else {
+            setVideoRemoteUid(null);
           }
+        },
+        onConnectionStateChanged: (connection, state, reason) => {
+          console.log("[v0] Connection state changed:", state, reason);
+        },
+        onError: (err, msg) => {
+          console.log("[v0] Agora error:", err, msg);
         },
       };
       engine.registerEventHandler(handler);
       agoraHandlerRef.current = handler;
 
-      engine.joinChannel(token, String(chatId), 0, {
+      console.log("[v0] Joining channel:", chatId);
+      await engine.joinChannel(token, chatId, 0, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
       });
     } catch (e) {
-      console.log("[v0] startAgoraConnection error:", e.message);
-      Alert.alert("Call Failed", "Unable to connect to call.");
-      setCalling(false);
+      console.log("[v0] startAgoraConnection error:", e?.message);
+      if (callType === "voice") {
+        setCalling(false);
+        setInCall(false);
+      } else {
+        setVideoCalling(false);
+        setInVideoCall(false);
+      }
+      Alert.alert("Connection Error", e?.message || "Failed to start call");
     }
   };
 
@@ -1823,7 +1955,6 @@ export default function ChatMessage({
 
       setIsRinging(false);
 
-      // Notify caller of acceptance
       SocketService.socket?.emit("call:accept", {
         to: incomingCallFrom?._id,
         from: {
@@ -1833,11 +1964,37 @@ export default function ChatMessage({
         chatId,
       });
 
-      // Start Agora connection
-      await startAgoraConnection();
+      await startAgoraConnection("voice");
     } catch (e) {
       console.log("[v0] acceptIncomingCall error:", e.message);
       Alert.alert("Error", "Failed to accept call");
+    }
+  };
+
+  const acceptIncomingVideoCall = async () => {
+    try {
+      if (videoCallTimeout) {
+        clearTimeout(videoCallTimeout);
+        setVideoCallTimeout(null);
+      }
+
+      setIsVideoRinging(false);
+      setInVideoCall(true);
+
+      SocketService.socket?.emit("videocall:accept", {
+        to: incomingVideoCallFrom?._id,
+        from: {
+          _id: authUser._id,
+          name: authUser.name,
+        },
+        chatId,
+      });
+
+      await startAgoraConnection("video");
+    } catch (e) {
+      console.log("[v0] acceptIncomingVideoCall error:", e.message);
+      Alert.alert("Error", "Failed to accept video call");
+      setInVideoCall(false);
     }
   };
 
@@ -1846,10 +2003,8 @@ export default function ChatMessage({
     setIsRinging(false);
     setIncomingCallFrom(null);
 
-    // Send call rejected message
-    sendCallInfoMessage("rejected");
+    sendCallInfoMessage("rejected", 0, "", "voice");
 
-    // Emit rejection event
     const chatData = route.params?.chatData;
     const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
     SocketService.socket?.emit("call:reject", {
@@ -1858,7 +2013,25 @@ export default function ChatMessage({
       chatId,
     });
 
-    console.log("[v0] Call rejected");
+    console.log("[v0] Voice call rejected");
+  };
+
+  const rejectIncomingVideoCall = () => {
+    setVideoCalleeInfo(null);
+    setIsVideoRinging(false);
+    setIncomingVideoCallFrom(null);
+
+    sendCallInfoMessage("rejected", 0, "", "video");
+
+    const chatData = route.params?.chatData;
+    const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+    SocketService.socket?.emit("videocall:reject", {
+      to: otherUser?._id,
+      from: authUser._id,
+      chatId,
+    });
+
+    console.log("[v0] Video call rejected");
   };
 
   const endVoiceCall = async () => {
@@ -1874,18 +2047,15 @@ export default function ChatMessage({
         const duration = Math.floor((Date.now() - callStartTime) / 1000);
         setCallDuration(duration);
 
-        // Send call ended message
-        await sendCallInfoMessage("ended", duration);
+        await sendCallInfoMessage("ended", duration, "", "voice");
       }
 
       if (engineRef.current) {
-        // Changed from agoraEngineRef.current to engineRef.current
         await engineRef.current.leaveChannel();
         await engineRef.current.release();
         engineRef.current = null;
       }
 
-      // Emit call end event
       const chatData = route.params?.chatData;
       const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
       SocketService.socket?.emit("call:end", {
@@ -1894,9 +2064,46 @@ export default function ChatMessage({
         chatId,
       });
 
-      console.log("[v0] Call ended");
+      console.log("[v0] Voice call ended");
     } catch (e) {
       console.log("[v0] endVoiceCall error:", e.message);
+    }
+  };
+
+  const endVideoCall = async () => {
+    try {
+      setVideoCalleeInfo(null);
+      setVideoCalling(false);
+      setInVideoCall(false);
+      setIsVideoRinging(false);
+      setIncomingVideoCallFrom(null);
+      setVideoRemoteUid(null);
+      setIsVideoMuted(false);
+
+      if (videoCallStartTime) {
+        const duration = Math.floor((Date.now() - videoCallStartTime) / 1000);
+        setVideoCallDuration(duration);
+
+        await sendCallInfoMessage("ended", duration, "", "video");
+      }
+
+      if (engineRef.current) {
+        await engineRef.current.leaveChannel();
+        await engineRef.current.release();
+        engineRef.current = null;
+      }
+
+      const chatData = route.params?.chatData;
+      const otherUser = chatData?.users.find((u) => u._id !== authUser._id);
+      SocketService.socket?.emit("videocall:end", {
+        to: otherUser?._id,
+        from: authUser._id,
+        chatId,
+      });
+
+      console.log("[v0] Video call ended");
+    } catch (e) {
+      console.log("[v0] endVideoCall error:", e.message);
     }
   };
 
@@ -1930,6 +2137,50 @@ export default function ChatMessage({
     }
   };
 
+  const toggleVideoMute = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const next = !isVideoMuted;
+      await engine.muteLocalAudioStream(next);
+      setIsVideoMuted(next);
+    } catch (e) {
+      console.log("[v0] toggleVideoMute error:", e?.message);
+    }
+  };
+
+  const toggleVideoCamera = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const next = !videoCameraOn;
+      if (typeof engine.enableLocalVideo === "function") {
+        await engine.enableLocalVideo(next);
+      }
+      setVideoCameraOn(next);
+    } catch (e) {
+      console.log("[v0] toggleVideoCamera error:", e?.message);
+    }
+  };
+
+  const toggleVideoSpeaker = async () => {
+    try {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const next = !videoSpeakerOn;
+      if (typeof engine.setEnableSpeakerphone === "function") {
+        await engine.setEnableSpeakerphone(next);
+      } else if (
+        typeof engine.setDefaultAudioRouteToSpeakerphone === "function"
+      ) {
+        engine.setDefaultAudioRouteToSpeakerphone(next);
+      }
+      setVideoSpeakerOn(next);
+    } catch (e) {
+      console.log("[v0] toggleVideoSpeaker error:", e?.message);
+    }
+  };
+
   if (loading) {
     return (
       <View style={dynamicStyles.loadingContainer}>
@@ -1943,7 +2194,7 @@ export default function ChatMessage({
     );
   }
 
-  const displayInfo = getChatDisplayInfo(); // Define displayInfo here
+  const displayInfo = getChatDisplayInfo();
 
   return (
     <KeyboardAvoidingView
@@ -2007,20 +2258,60 @@ export default function ChatMessage({
 
         <View style={styles.headerActions}>
           {!displayInfo.isGroup && (
-            <TouchableOpacity
-              style={styles.settingsButton}
-              onPress={initiateVoiceCall}
-              disabled={calling || inCall || isRinging}
-            >
-              <Phone
-                size={20}
-                color={
-                  calling || inCall || isRinging
-                    ? theme.secondaryText
-                    : theme.secondaryText
+            <>
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={initiateVoiceCall}
+                disabled={
+                  calling ||
+                  inCall ||
+                  isRinging ||
+                  videoCalling ||
+                  inVideoCall ||
+                  isVideoRinging
                 }
-              />
-            </TouchableOpacity>
+              >
+                <Phone
+                  size={20}
+                  color={
+                    calling ||
+                    inCall ||
+                    isRinging ||
+                    videoCalling ||
+                    inVideoCall ||
+                    isVideoRinging
+                      ? theme.secondaryText
+                      : theme.secondaryText
+                  }
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={initiateVideoCall}
+                disabled={
+                  calling ||
+                  inCall ||
+                  isRinging ||
+                  videoCalling ||
+                  inVideoCall ||
+                  isVideoRinging
+                }
+              >
+                <Video
+                  size={20}
+                  color={
+                    calling ||
+                    inCall ||
+                    isRinging ||
+                    videoCalling ||
+                    inVideoCall ||
+                    isVideoRinging
+                      ? theme.secondaryText
+                      : theme.secondaryText
+                  }
+                />
+              </TouchableOpacity>
+            </>
           )}
           <TouchableOpacity
             style={styles.settingsButton}
@@ -2232,7 +2523,7 @@ export default function ChatMessage({
       >
         <View style={styles.previewBackdrop}>
           <View style={styles.previewContent}>
-            <Video
+            <VideoComponent
               source={{ uri: videoPreview.url }}
               style={{
                 width: "100%",
@@ -2284,7 +2575,7 @@ export default function ChatMessage({
                       Alert.alert("Downloaded", "Saved to app documents");
                     }
                   } catch (e) {
-                    console.error("[v0] spreview download error:", e);
+                    console.error("[v0] video preview download error:", e);
                     Alert.alert("Error", "Failed to download video");
                   } finally {
                     setDownloadingId(null);
@@ -2488,7 +2779,34 @@ export default function ChatMessage({
         onReject={rejectIncomingCall}
       />
 
-      {/* Chat Menu Modal */}
+      <VideoCallModal
+        visible={
+          videoCalling ||
+          (incomingVideoCallFrom && isVideoRinging) ||
+          inVideoCall
+        }
+        inCall={inVideoCall}
+        isRinging={isVideoRinging && !!incomingVideoCallFrom}
+        isCalling={videoCalling}
+        displayName={
+          incomingVideoCallFrom
+            ? incomingVideoCallFrom.name
+            : otherUser?.name || "Unknown"
+        }
+        isVideoMuted={isVideoMuted}
+        isCameraOn={videoCameraOn}
+        speakerOn={videoSpeakerOn}
+        remoteUid={videoRemoteUid}
+        localUid={videoLocalUid}
+        agoraEngine={engineRef.current}
+        onToggleMute={toggleVideoMute}
+        onToggleCamera={toggleVideoCamera}
+        onToggleSpeaker={toggleVideoSpeaker}
+        onEnd={endVideoCall}
+        onAccept={acceptIncomingVideoCall}
+        onReject={rejectIncomingVideoCall}
+      />
+
       <Modal
         visible={showMenuModal}
         transparent
@@ -2674,7 +2992,6 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: "row",
     alignItems: "center",
-    width: 40,
     justifyContent: "flex-end",
   },
   settingsButton: {
@@ -2923,10 +3240,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   docActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: "rgba(0,0,0,0.08)",
+    borderRadius: 12,
+    alignSelf: "flex-start",
   },
   docActionText: {
     fontSize: 12,

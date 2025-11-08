@@ -14,7 +14,7 @@ const getApiUrl = () => {
   }
 
   // Physical device (replace with your IP)
-  return "http://192.168.100.15:8000/api/user";
+  return "http://192.168.0.110:8000/api/user";
 };
 
 const API_URL = getApiUrl();

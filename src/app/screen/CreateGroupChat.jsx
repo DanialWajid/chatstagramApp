@@ -35,7 +35,7 @@ const CreateGroupChat = () => {
   const navigation = useNavigation();
   const [groupImage, setGroupImage] = useState(null);
 
-  const API_URL = "http://192.168.100.15:8000/api";
+  const API_URL = "http://192.168.0.110:8000/api";
 
   useEffect(() => {
     fetchFriends();

@@ -28,7 +28,7 @@ const AiPromptBox = ({ visible, onClose, onAiReply }) => {
     setLoading(true);
     try {
       const res = await axios.post(
-        "http://192.168.100.15:8000/api/gemini/auto-message",
+        "http://192.168.0.110:8000/api/gemini/auto-message",
         { prompt }
       );
       setGeneratedMessage(res.data.reply);

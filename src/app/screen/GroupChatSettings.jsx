@@ -14,13 +14,7 @@ import {
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
-import {
-  User,
-  Users,
-  Edit3,
-  UserPlus,
-  LogOut,
-} from "lucide-react-native";
+import { User, Users, Edit3, UserPlus, LogOut } from "lucide-react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import * as ImagePicker from "expo-image-picker";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
@@ -38,14 +32,14 @@ const GroupChatSettings = () => {
   const [availableFriends, setAvailableFriends] = useState([]);
   const [selectedNewMembers, setSelectedNewMembers] = useState([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
-  
+
   const { user } = useAuthStore();
   const navigation = useNavigation();
   const route = useRoute();
   const { theme } = useTheme();
 
   const { chatId, chatData } = route.params;
-  const API_URL = "http://192.168.100.15:8000/api";
+  const API_URL = "http://192.168.0.110:8000/api";
 
   useEffect(() => {
     setGroupData(chatData);
@@ -56,7 +50,7 @@ const GroupChatSettings = () => {
   const isUserAdmin = (userId) => {
     if (!groupData?.groupAdmin) return false;
     if (Array.isArray(groupData.groupAdmin)) {
-      return groupData.groupAdmin.some(admin => admin._id === userId);
+      return groupData.groupAdmin.some((admin) => admin._id === userId);
     }
     return groupData.groupAdmin._id === userId;
   };
@@ -79,7 +73,7 @@ const GroupChatSettings = () => {
     if (!groupData?.memberPermissions) {
       return { canAddMembers: false, canEditGroup: false };
     }
-    
+
     const perms = groupData.memberPermissions[memberId];
     return perms || { canAddMembers: false, canEditGroup: false };
   };
@@ -94,7 +88,8 @@ const GroupChatSettings = () => {
     setMemberMenuVisible(false);
   };
 
-  const handleRemoveMember = async (memberId) => {  //removeUser to handleRemoveMember
+  const handleRemoveMember = async (memberId) => {
+    //removeUser to handleRemoveMember
     Alert.alert(
       "Remove Member",
       "Are you sure you want to remove this member from the group?",
@@ -106,14 +101,14 @@ const GroupChatSettings = () => {
           onPress: async () => {
             closeMemberMenu(); //
             try {
-              setActionLoading(true); // 
+              setActionLoading(true); //
               const token = await SecureStore.getItemAsync("token");
 
               const response = await axios.put(
                 `${API_URL}/chat/groupremove`,
                 {
                   chatId: chatId,
-                  userId: memberId,  // userId to memberId
+                  userId: memberId, // userId to memberId
                 },
                 {
                   headers: { Authorization: `Bearer ${token}` },
@@ -124,9 +119,13 @@ const GroupChatSettings = () => {
               Alert.alert("Success", "Member removed successfully");
             } catch (error) {
               console.error("Error removing user:", error);
-              Alert.alert("Error", error.response?.data?.message || "Failed to remove member");  //
-            } finally {   //
-              setActionLoading(false);     // 
+              Alert.alert(
+                "Error",
+                error.response?.data?.message || "Failed to remove member"
+              ); //
+            } finally {
+              //
+              setActionLoading(false); //
             }
           },
         },
@@ -150,7 +149,10 @@ const GroupChatSettings = () => {
       Alert.alert("Success", "Member promoted to admin");
     } catch (error) {
       console.error("Error making admin:", error);
-      Alert.alert("Error", error.response?.data?.message || "Failed to promote member");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Failed to promote member"
+      );
     } finally {
       setActionLoading(false);
     }
@@ -172,7 +174,10 @@ const GroupChatSettings = () => {
       Alert.alert("Success", "Admin dismissed successfully");
     } catch (error) {
       console.error("Error dismissing admin:", error);
-      Alert.alert("Error", error.response?.data?.message || "Failed to dismiss admin");
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Failed to dismiss admin"
+      );
     } finally {
       setActionLoading(false);
     }
@@ -197,11 +202,12 @@ const GroupChatSettings = () => {
       );
 
       setGroupData(response.data);
-      
-      const permissionName = permissionType === 'canAddMembers' ? 'add members' : 'edit group info';
+
+      const permissionName =
+        permissionType === "canAddMembers" ? "add members" : "edit group info";
       Alert.alert(
         "Success",
-        `Member ${newValue ? 'allowed' : 'forbidden'} to ${permissionName}`
+        `Member ${newValue ? "allowed" : "forbidden"} to ${permissionName}`
       );
     } catch (error) {
       console.error("Error updating permission:", error);
@@ -325,7 +331,9 @@ const GroupChatSettings = () => {
         timeout: 10000,
       });
 
-      let list = Array.isArray(resp.data) ? resp.data : resp.data?.friends || resp.data?.data || [];
+      let list = Array.isArray(resp.data)
+        ? resp.data
+        : resp.data?.friends || resp.data?.data || [];
       const memberIds = new Set((groupData?.users || []).map((u) => u._id));
       list = list.filter((f) => f._id !== user._id && !memberIds.has(f._id));
       setAvailableFriends(list);
@@ -350,7 +358,10 @@ const GroupChatSettings = () => {
 
   const addNewMembers = async () => {
     if (selectedNewMembers.length === 0) {
-      Alert.alert("Select members", "Please select at least one member to add.");
+      Alert.alert(
+        "Select members",
+        "Please select at least one member to add."
+      );
       return;
     }
     try {
@@ -376,11 +387,18 @@ const GroupChatSettings = () => {
     const showMenu = isCurrentUserAdmin && item._id !== user._id;
 
     return (
-      <View style={[styles.memberItem, { backgroundColor: theme.card, borderColor: theme.border }]}>
+      <View
+        style={[
+          styles.memberItem,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         {item.profileImage ? (
           <Image source={{ uri: item.profileImage }} style={styles.avatar} />
         ) : (
-          <View style={[styles.avatarFallback, { backgroundColor: theme.input }]}>
+          <View
+            style={[styles.avatarFallback, { backgroundColor: theme.input }]}
+          >
             <User size={24} color={theme.secondaryText} />
           </View>
         )}
@@ -389,21 +407,30 @@ const GroupChatSettings = () => {
           <Text style={[styles.memberName, { color: theme.text }]}>
             {item.name}
             {isMemberAdmin && (
-              <Text style={[styles.adminLabel, { color: theme.accent }]}> (Admin)</Text>
+              <Text style={[styles.adminLabel, { color: theme.accent }]}>
+                {" "}
+                (Admin)
+              </Text>
             )}
-            {item._id === user._id && <Text style={styles.youLabel}> (You)</Text>}
+            {item._id === user._id && (
+              <Text style={styles.youLabel}> (You)</Text>
+            )}
           </Text>
-          <Text style={[styles.memberEmail, { color: theme.secondaryText }]}>{item.email}</Text>
+          <Text style={[styles.memberEmail, { color: theme.secondaryText }]}>
+            {item.email}
+          </Text>
         </View>
 
         {showMenu && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.menuButton}
             onPress={() => openMemberMenu(item)}
             disabled={actionLoading}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={[styles.menuDots, { color: theme.secondaryText }]}>⋮</Text>
+            <Text style={[styles.menuDots, { color: theme.secondaryText }]}>
+              ⋮
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -419,9 +446,16 @@ const GroupChatSettings = () => {
     return (
       <Modal visible={memberMenuVisible} animationType="fade" transparent>
         <View style={styles.menuOverlay}>
-          <View style={[styles.menuContainer, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[styles.menuTitle, { color: theme.text }]}>{selectedMember.name}</Text>
-            
+          <View
+            style={[
+              styles.menuContainer,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
+          >
+            <Text style={[styles.menuTitle, { color: theme.text }]}>
+              {selectedMember.name}
+            </Text>
+
             <TouchableOpacity
               style={[styles.menuItem, { borderBottomColor: theme.border }]}
               onPress={() => handleRemoveMember(selectedMember._id)}
@@ -438,7 +472,9 @@ const GroupChatSettings = () => {
                 onPress={() => dismissMemberAsAdmin(selectedMember._id)}
                 disabled={actionLoading}
               >
-                <Text style={[styles.menuItemText, { color: theme.text }]}>Dismiss as Admin</Text>
+                <Text style={[styles.menuItemText, { color: theme.text }]}>
+                  Dismiss as Admin
+                </Text>
               </TouchableOpacity>
             ) : (
               <>
@@ -447,26 +483,36 @@ const GroupChatSettings = () => {
                   onPress={() => makeMemberAdmin(selectedMember._id)}
                   disabled={actionLoading}
                 >
-                  <Text style={[styles.menuItemText, { color: theme.text }]}>Make Group Admin</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.menuItem, { borderBottomColor: theme.border }]}
-                  onPress={() => toggleMemberPermission(selectedMember._id, 'canAddMembers')}
-                  disabled={actionLoading}
-                >
                   <Text style={[styles.menuItemText, { color: theme.text }]}>
-                    {memberPerms.canAddMembers ? 'Forbid to Add Members' : 'Allow to Add Members'}
+                    Make Group Admin
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={[styles.menuItem, { borderBottomColor: theme.border }]}
-                  onPress={() => toggleMemberPermission(selectedMember._id, 'canEditGroup')}
+                  onPress={() =>
+                    toggleMemberPermission(selectedMember._id, "canAddMembers")
+                  }
                   disabled={actionLoading}
                 >
                   <Text style={[styles.menuItemText, { color: theme.text }]}>
-                    {memberPerms.canEditGroup ? 'Forbid to Edit Group Pic & Name' : 'Allow to Edit Group Pic & Name'}
+                    {memberPerms.canAddMembers
+                      ? "Forbid to Add Members"
+                      : "Allow to Add Members"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.menuItem, { borderBottomColor: theme.border }]}
+                  onPress={() =>
+                    toggleMemberPermission(selectedMember._id, "canEditGroup")
+                  }
+                  disabled={actionLoading}
+                >
+                  <Text style={[styles.menuItemText, { color: theme.text }]}>
+                    {memberPerms.canEditGroup
+                      ? "Forbid to Edit Group Pic & Name"
+                      : "Allow to Edit Group Pic & Name"}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -476,7 +522,11 @@ const GroupChatSettings = () => {
               style={[styles.menuItem, styles.menuClose]}
               onPress={closeMemberMenu}
             >
-              <Text style={[styles.menuCloseText, { color: theme.secondaryText }]}>Close</Text>
+              <Text
+                style={[styles.menuCloseText, { color: theme.secondaryText }]}
+              >
+                Close
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -486,7 +536,9 @@ const GroupChatSettings = () => {
 
   if (loading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+      <View
+        style={[styles.loadingContainer, { backgroundColor: theme.background }]}
+      >
         <ActivityIndicator size="large" color={theme.accent} />
         <Text style={[styles.loadingText, { color: theme.secondaryText }]}>
           Loading group settings...
@@ -498,19 +550,31 @@ const GroupChatSettings = () => {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: theme.card, borderBottomColor: theme.border },
+        ]}
+      >
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Text style={[styles.backButtonText, { color: theme.text }]}>←</Text>
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.text }]}>Group Settings</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>
+          Group Settings
+        </Text>
         <View style={styles.headerSpacer} />
       </View>
 
       {/* Group Info */}
-      <View style={[styles.groupInfoSection, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View
+        style={[
+          styles.groupInfoSection,
+          { backgroundColor: theme.card, borderBottomColor: theme.border },
+        ]}
+      >
         <TouchableOpacity
           style={[styles.groupIcon, { borderColor: theme.accent }]}
           onPress={() => canCurrentUserEditGroup() && pickGroupImage()}
@@ -547,7 +611,10 @@ const GroupChatSettings = () => {
           {editingName ? (
             <View style={styles.editNameContainer}>
               <TextInput
-                style={[styles.editNameInput, { color: theme.text, borderBottomColor: theme.accent }]}
+                style={[
+                  styles.editNameInput,
+                  { color: theme.text, borderBottomColor: theme.accent },
+                ]}
                 value={newGroupName}
                 onChangeText={setNewGroupName}
                 onBlur={renameGroup}
@@ -563,8 +630,12 @@ const GroupChatSettings = () => {
               onPress={() => canCurrentUserEditGroup() && setEditingName(true)}
               disabled={!canCurrentUserEditGroup()}
             >
-              <Text style={[styles.groupName, { color: theme.text }]}>{groupData?.chatName}</Text>
-              {canCurrentUserEditGroup() && <Edit3 size={16} color={theme.secondaryText} />}
+              <Text style={[styles.groupName, { color: theme.text }]}>
+                {groupData?.chatName}
+              </Text>
+              {canCurrentUserEditGroup() && (
+                <Edit3 size={16} color={theme.secondaryText} />
+              )}
             </TouchableOpacity>
           )}
 
@@ -576,16 +647,23 @@ const GroupChatSettings = () => {
 
       {canCurrentUserAddMembers() && (
         <TouchableOpacity
-          style={[styles.addMembersButton, { backgroundColor: theme.card, borderBottomColor: theme.border }]}
+          style={[
+            styles.addMembersButton,
+            { backgroundColor: theme.card, borderBottomColor: theme.border },
+          ]}
           onPress={openAddModal}
         >
           <UserPlus size={18} color={theme.accent} />
-          <Text style={[styles.addMembersText, { color: theme.accent }]}>Add Members</Text>
+          <Text style={[styles.addMembersText, { color: theme.accent }]}>
+            Add Members
+          </Text>
         </TouchableOpacity>
       )}
 
       <View style={styles.membersSection}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>Members</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          Members
+        </Text>
         <FlatList
           data={groupData?.users || []}
           renderItem={renderMember}
@@ -596,11 +674,13 @@ const GroupChatSettings = () => {
       </View>
 
       <MemberMenuModal />
-      
+
       <Modal visible={showAddModal} animationType="slide" transparent>
         <View style={styles.modalContainer}>
           <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Add Members</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Add Members
+            </Text>
             {friendsLoading ? (
               <ActivityIndicator size="small" color={theme.accent} />
             ) : (
@@ -609,24 +689,50 @@ const GroupChatSettings = () => {
                 keyExtractor={(item) => item._id}
                 renderItem={({ item }) => (
                   <TouchableOpacity
-                    style={[styles.friendRow, { borderBottomColor: theme.border }]}
+                    style={[
+                      styles.friendRow,
+                      { borderBottomColor: theme.border },
+                    ]}
                     onPress={() => toggleNewMember(item)}
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View
+                      style={{ flexDirection: "row", alignItems: "center" }}
+                    >
                       {item.profileImage ? (
-                        <Image source={{ uri: item.profileImage }} style={styles.avatar} />
+                        <Image
+                          source={{ uri: item.profileImage }}
+                          style={styles.avatar}
+                        />
                       ) : (
-                        <View style={[styles.avatarFallback, { backgroundColor: theme.input }]}>
+                        <View
+                          style={[
+                            styles.avatarFallback,
+                            { backgroundColor: theme.input },
+                          ]}
+                        >
                           <User size={20} color={theme.secondaryText} />
                         </View>
                       )}
                       <View style={{ marginLeft: 10 }}>
-                        <Text style={[styles.memberName, { color: theme.text }]}>{item.name}</Text>
-                        <Text style={[styles.memberEmail, { color: theme.secondaryText }]}>{item.email}</Text>
+                        <Text
+                          style={[styles.memberName, { color: theme.text }]}
+                        >
+                          {item.name}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.memberEmail,
+                            { color: theme.secondaryText },
+                          ]}
+                        >
+                          {item.email}
+                        </Text>
                       </View>
                     </View>
                     <Text style={{ color: theme.accent, fontSize: 18 }}>
-                      {selectedNewMembers.find((f) => f._id === item._id) ? "✓" : ""}
+                      {selectedNewMembers.find((f) => f._id === item._id)
+                        ? "✓"
+                        : ""}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -634,14 +740,14 @@ const GroupChatSettings = () => {
             )}
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: theme.accent }]} 
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.accent }]}
                 onPress={addNewMembers}
               >
                 <Text style={{ color: theme.buttonText }}>Add</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: theme.input }]} 
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: theme.input }]}
                 onPress={() => setShowAddModal(false)}
               >
                 <Text style={{ color: theme.text }}>Cancel</Text>
@@ -652,12 +758,17 @@ const GroupChatSettings = () => {
       </Modal>
 
       <View style={[styles.actionsSection, { borderTopColor: theme.border }]}>
-        <TouchableOpacity 
-          style={[styles.leaveButton, { backgroundColor: theme.card, borderColor: theme.error }]} 
+        <TouchableOpacity
+          style={[
+            styles.leaveButton,
+            { backgroundColor: theme.card, borderColor: theme.error },
+          ]}
           onPress={leaveGroup}
         >
           <LogOut size={20} color={theme.error} />
-          <Text style={[styles.leaveButtonText, { color: theme.error }]}>Leave Group</Text>
+          <Text style={[styles.leaveButtonText, { color: theme.error }]}>
+            Leave Group
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -834,39 +945,39 @@ const styles = StyleSheet.create({
     padding: 16,
     maxHeight: "80%",
   },
-  modalTitle: { 
-    fontSize: 18, 
-    marginBottom: 12, 
-    fontWeight: "700" 
+  modalTitle: {
+    fontSize: 18,
+    marginBottom: 12,
+    fontWeight: "700",
   },
-  friendRow: { 
-    flexDirection: "row", 
-    justifyContent: "space-between", 
-    alignItems: "center", 
-    padding: 12, 
+  friendRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 12,
     borderBottomWidth: 1,
   },
-  modalButtons: { 
-    flexDirection: "row", 
-    justifyContent: "flex-end", 
-    marginTop: 12 
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
   },
-  modalButton: { 
-    padding: 10, 
-    borderRadius: 8, 
-    marginLeft: 8 
+  modalButton: {
+    padding: 10,
+    borderRadius: 8,
+    marginLeft: 8,
   },
   menuButton: {
     padding: 8,
     width: 32,
     height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   menuDots: {
     fontSize: 24,
     lineHeight: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   menuOverlay: {
     flex: 1,
