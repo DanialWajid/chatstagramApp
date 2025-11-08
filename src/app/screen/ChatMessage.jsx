@@ -65,6 +65,7 @@ import VoiceCallModal from "../../components/voiceCallModal";
 import VideoCallModal from "../../components/videoCall";
 import CallInfoMessage from "../../components/call-info-message";
 import { handleExportChat } from "../../utils/chatMenuUtils";
+import VideoCallModal from "../../components/VideoCallModal";
 
 const TypingIndicator = ({ typingUsers }) => {
   const { theme } = useTheme();
@@ -810,10 +811,10 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:initiate", (data) => {
-      console.log("[v0] Incoming video call from:", data.from);
+      console.log("Incoming video call from:", data.from);
 
       if (data.from._id === authUser._id) {
-        console.log("[v0] Ignoring own video call event");
+        console.log("Ignoring own video call event");
         return;
       }
 
@@ -821,7 +822,7 @@ export default function ChatMessage({
       setIsVideoRinging(true);
 
       const timeout = setTimeout(() => {
-        console.log("[v0] Video call timeout - no response");
+        console.log(" Video call timeout - no response");
         setIsVideoRinging(false);
         setIncomingVideoCallFrom(null);
         Alert.alert("Missed Call", `Video call from ${data.from.name} ended`);
@@ -1741,6 +1742,7 @@ export default function ChatMessage({
 
   const initiateVoiceCall = async () => {
     try {
+      console.log("[v0] Initiating voice call...");
       const micOk = await requestMicrophonePermission();
       if (!micOk) return;
 
@@ -1769,6 +1771,7 @@ export default function ChatMessage({
 
   const initiateVideoCall = async () => {
     try {
+      console.log(" Initiating video call...");
       if (!SocketService.getConnectionStatus()) {
         Alert.alert(
           "Connection Error",
@@ -1787,7 +1790,7 @@ export default function ChatMessage({
       setVideoCalleeInfo(otherUser);
 
       console.log(
-        "[v0] 📹 Initiating video call to:",
+        "Initiating video call to:",
         otherUser?.name,
         "ID:",
         otherUser?._id
@@ -1802,7 +1805,7 @@ export default function ChatMessage({
         chatId,
       });
     } catch (e) {
-      console.log("[v0] ❌ initiateVideoCall error:", e.message);
+      console.log(" initiateVideoCall error:", e.message);
       Alert.alert("Call Failed", "Unable to initiate the video call.");
       setVideoCalling(false);
     }

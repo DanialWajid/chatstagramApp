@@ -45,6 +45,10 @@ const ReportModal = ({ visible, onClose, chatData, reportedUser }) => {
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [blockUser, setBlockUser] = useState(false);
+
+  const API_URL = "http://192.168.0.110:8000/api";
+
   const dynamicStyles = {
     overlay: {
       ...styles.overlay,
