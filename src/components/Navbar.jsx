@@ -72,7 +72,7 @@ const Navbar = () => {
 
   // Map route names to friendly titles
   const titleMap = {
-    Home: "Chats",
+    Home: "Chatstagram",
     Friends: "Connections",
     Profile: "Profile",
     ChatMessage: "Chat",
@@ -108,9 +108,28 @@ const Navbar = () => {
           style={styles.logoContainer}
           onPress={() => navigation.navigate("Home")}
         >
-          <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>
-            {currentTitle}
-          </Text>
+          {currentTitle === "Chatstagram" ? (
+            <>
+              <Image
+                source={require("../assets/images/logo.png")}
+                style={styles.chatLogo}
+                resizeMode="contain"
+              />
+              <Text
+                style={[styles.chatTitle, { color: theme.text }]}
+                numberOfLines={1}
+              >
+                {currentTitle}
+              </Text>
+            </>
+          ) : (
+            <Text
+              style={[styles.title, { color: theme.text }]}
+              numberOfLines={1}
+            >
+              {currentTitle}
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Menu only */}
@@ -295,6 +314,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: "row",
     alignItems: "center",
+    paddingBottom: 4,
   },
   logo: {
     width: 0,
@@ -306,6 +326,17 @@ const styles = StyleSheet.create({
     fontSize: 24,
     marginLeft: 8,
     fontWeight: "700",
+  },
+  chatTitle: {
+    fontFamily: "InstagramLogo",
+    fontSize: 35,
+    fontWeight: "500",
+    marginLeft: 8,
+    marginTop: 4,
+  },
+  chatLogo: {
+    width: 45,
+    height: 45,
   },
   rightContainer: {
     flexDirection: "row",

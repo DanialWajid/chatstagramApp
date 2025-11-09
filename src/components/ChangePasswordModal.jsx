@@ -132,10 +132,10 @@ const ChangePasswordModal = ({ onClose }) => {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.centeredView}
     >
-      <Pressable style={styles.backdrop} onPress={handleClose} />
+      <Pressable style={styles.backdrop} onPress={onClose} />
 
       <View style={[styles.modalView, { backgroundColor: theme.card }]}>
-        <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
           <X size={24} color={theme.text} />
         </TouchableOpacity>
 

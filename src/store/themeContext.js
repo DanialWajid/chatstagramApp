@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useMemo } from "react"
+import { createContext, useContext, useState, useMemo } from "react";
 
-const ThemeContext = createContext()
+const ThemeContext = createContext();
 
 export const themes = {
   dark: {
@@ -35,16 +35,17 @@ export const themes = {
     buttonText: "#fff",
     error: "#ef4444",
     success: "#10b981",
-    navbar: "#1a202c",
+    navbar: "#ffffff",
     gradient: ["#f0f9ff", "#e0e7ff", "#c7d2fe"],
     // Add more as needed
   },
-}
+};
 
 export const ThemeProvider = ({ children }) => {
-  const [themeName, setThemeName] = useState("dark") // Default to dark as requested
+  const [themeName, setThemeName] = useState("dark"); // Default to dark as requested
 
-  const toggleTheme = () => setThemeName((prev) => (prev === "dark" ? "light" : "dark"))
+  const toggleTheme = () =>
+    setThemeName((prev) => (prev === "dark" ? "light" : "dark"));
 
   const value = useMemo(
     () => ({
@@ -52,10 +53,12 @@ export const ThemeProvider = ({ children }) => {
       themeName,
       toggleTheme,
     }),
-    [themeName],
-  )
+    [themeName]
+  );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-}
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
+};
 
-export const useTheme = () => useContext(ThemeContext)
+export const useTheme = () => useContext(ThemeContext);
