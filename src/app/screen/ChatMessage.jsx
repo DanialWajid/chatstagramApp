@@ -655,7 +655,7 @@ export default function ChatMessage({
 
               const token = await SecureStore.getItemAsync("token");
 
-              await axios.delete(deleteUrl, {
+              const response = await axios.delete(deleteUrl, {
                 headers: { Authorization: `Bearer ${token}` },
               });
 
