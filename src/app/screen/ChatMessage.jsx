@@ -52,6 +52,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { WebView } from "react-native-webview";
 import * as WebBrowser from "expo-web-browser";
+import { encryptMessage, decryptMessage } from "../../utils/encryption";
+
 import {
   createAgoraRtcEngine,
   ChannelProfileType,
@@ -479,7 +481,7 @@ export default function ChatMessage({
         } catch {}
       }, 250);
     } catch (e) {
-      console.log("[v0] startVoiceRecording error:", e?.message);
+      console.log(" startVoiceRecording error:", e?.message);
       Alert.alert("Error", "Failed to start recording");
       setIsRecording(false);
     }
@@ -524,7 +526,7 @@ export default function ChatMessage({
 
       return null;
     } catch (e) {
-      console.log("[v0] stopVoiceRecording error:", e?.message);
+      console.log(" stopVoiceRecording error:", e?.message);
       setIsRecording(false);
       return null;
     } finally {
@@ -567,7 +569,7 @@ export default function ChatMessage({
 
   const [showAiPrompt, setShowAiPrompt] = useState(false);
 
-  const API_URL = "http://192.168.100.15:8000/api";
+  const API_URL = "http://192.168.0.110:8000/api";
   const CALL_URL = API_URL.replace("/api", "/call");
   const AGORA_APP_ID = "e7f6e9aeecf14b2ba10e3f40be9f56e7";
   const { chatId } = route.params;
@@ -586,7 +588,7 @@ export default function ChatMessage({
       });
       return data?.token;
     } catch (e) {
-      console.log("[v0] fetchAgoraToken error:", e?.message);
+      console.log(" fetchAgoraToken error:", e?.message);
       return undefined;
     }
   };
@@ -620,7 +622,7 @@ export default function ChatMessage({
       });
 
       const callMessage = response.data.data || response.data;
-      console.log("[v0] Call info message sent:", callMessage);
+      console.log(" Call info message sent:", callMessage);
 
       setMessages((prevMessages) => [...prevMessages, callMessage]);
 
@@ -632,7 +634,7 @@ export default function ChatMessage({
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     } catch (error) {
-      console.error("[v0] Error sending call info message:", error);
+      console.error(" Error sending call info message:", error);
     }
   };
 
@@ -888,11 +890,11 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("call:initiate", (data) => {
-      console.log("[v0] Incoming call from:", data.from);
+      console.log(" Incoming call from:", data.from);
 
       if (data.from._id === authUser._id) {
         // Use authUser._id
-        console.log("[v0] Ignoring own call event");
+        console.log(" Ignoring own call event");
         return;
       }
 
@@ -900,7 +902,7 @@ export default function ChatMessage({
       setIsRinging(true);
 
       const timeout = setTimeout(() => {
-        console.log("[v0] Call timeout - no response");
+        console.log(" Call timeout - no response");
         setIsRinging(false);
         setIncomingCallFrom(null);
         Alert.alert("Missed Call", `Call from ${data.from.name} ended`);
@@ -910,7 +912,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("call:accept", (data) => {
-      console.log("[v0] Call accepted by:", data.from);
+      console.log(" Call accepted by:", data.from);
       setCalling(false);
       setIsRinging(false);
       setCallStartTime(Date.now());
@@ -918,7 +920,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("call:reject", (data) => {
-      console.log("[v0] Call rejected by:", data.from);
+      console.log(" Call rejected by:", data.from);
       setCalleeInfo(null);
       setCalling(false);
       setIsRinging(false);
@@ -932,7 +934,7 @@ export default function ChatMessage({
 
     // Socket listener for call timeout
     SocketService.socket?.on("call:timeout", (data) => {
-      console.log("[v0] Call timed out");
+      console.log(" Call timed out");
       setCalleeInfo(null);
       setCalling(false);
       setIsRinging(false);
@@ -945,10 +947,10 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:initiate", (data) => {
-      console.log("[v0] Incoming video call from:", data.from);
+      console.log(" Incoming video call from:", data.from);
 
       if (data.from._id === authUser._id) {
-        console.log("[v0] Ignoring own video call event");
+        console.log(" Ignoring own video call event");
         return;
       }
 
@@ -956,7 +958,7 @@ export default function ChatMessage({
       setIsVideoRinging(true);
 
       const timeout = setTimeout(() => {
-        console.log("[v0] Video call timeout - no response");
+        console.log(" Video call timeout - no response");
         setIsVideoRinging(false);
         setIncomingVideoCallFrom(null);
         Alert.alert("Missed Call", `Video call from ${data.from.name} ended`);
@@ -966,7 +968,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:accept", (data) => {
-      console.log("[v0] Video call accepted by:", data.from);
+      console.log(" Video call accepted by:", data.from);
       setVideoCalling(false);
       setIsVideoRinging(false);
       setVideoCallStartTime(Date.now());
@@ -974,7 +976,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:reject", (data) => {
-      console.log("[v0] Video call rejected by:", data.from);
+      console.log(" Video call rejected by:", data.from);
       setVideoCalleeInfo(null);
       setVideoCalling(false);
       setIsVideoRinging(false);
@@ -986,7 +988,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:timeout", (data) => {
-      console.log("[v0] Video call timed out");
+      console.log(" Video call timed out");
       setVideoCalleeInfo(null);
       setVideoCalling(false);
       setIsVideoRinging(false);
@@ -1001,7 +1003,7 @@ export default function ChatMessage({
     });
 
     SocketService.socket?.on("videocall:end", (data) => {
-      console.log("[v0] Video call ended by:", data.from);
+      console.log(" Video call ended by:", data.from);
       endVideoCall();
     });
 
@@ -1104,10 +1106,10 @@ export default function ChatMessage({
 
   const fetchMessages = async () => {
     try {
-      console.log("[v0] Fetching messages for chat:", chatId);
+      console.log("Fetching messages for chat:", chatId);
 
       if (!chatId) {
-        console.error("[v0] chatId is undefined or empty");
+        console.error("chatId is undefined or empty");
         Alert.alert("Error", "Chat ID is missing");
         return;
       }
@@ -1115,7 +1117,7 @@ export default function ChatMessage({
       const token = await SecureStore.getItemAsync("token");
 
       if (!token) {
-        console.error("[v0] Token not found in secure storage");
+        console.error("Token not found in secure storage");
         Alert.alert("Error", "Authentication token missing");
         return;
       }
@@ -1126,14 +1128,21 @@ export default function ChatMessage({
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("[v0] Fetched", response.data.length, "messages");
-      setMessages(response.data);
+      console.log("Fetched", response.data.length, "messages");
+
+      // Decrypt all messages before setting state
+      const decryptedMessages = response.data.map((msg) => ({
+        ...msg,
+        content: decryptMessage(msg.content, chatId), // assuming msg.content is the encrypted text
+      }));
+
+      setMessages(decryptedMessages);
 
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
       }, 500);
     } catch (error) {
-      console.error("[v0] Error fetching messages:", {
+      console.error("Error fetching messages:", {
         message: error?.message,
         status: error?.response?.status,
         data: error?.response?.data,
@@ -1276,6 +1285,7 @@ export default function ChatMessage({
     };
   }, [messages]);
 
+  // Send encrypted message over WS, but decrypt only locally for display
   const sendMessage = async (fileOverride) => {
     const isValidFileOverride =
       fileOverride &&
@@ -1289,13 +1299,14 @@ export default function ChatMessage({
     )
       return;
 
-    const messageContent = newMessage.trim();
-    console.log(
-      "Sending message:",
-      messageContent,
-      "with file:",
-      isValidFileOverride ? fileOverride : selectedFile
-    );
+    let messageContent = newMessage.trim();
+
+    // Encrypt message content using chatId
+    if (messageContent) {
+      messageContent = encryptMessage(messageContent, chatId);
+    }
+
+    console.log("Encrypted message being sent:", messageContent);
 
     setNewMessage("");
     const fileToSend = isValidFileOverride ? fileOverride : selectedFile;
@@ -1306,7 +1317,7 @@ export default function ChatMessage({
       const token = await SecureStore.getItemAsync("token");
 
       const formData = new FormData();
-      formData.append("content", messageContent);
+      formData.append("content", messageContent); // encrypted
       formData.append("chatId", chatId);
 
       if (fileToSend) {
@@ -1325,12 +1336,20 @@ export default function ChatMessage({
       });
 
       const sentMessage = response.data.data || response.data;
-      console.log("Message sent successfully:", sentMessage);
 
-      setMessages((prevMessages) => [...prevMessages, sentMessage]);
+      // ✅ For local display: decrypt before adding to state
+      const displayMessage = {
+        ...sentMessage,
+        content: sentMessage.content
+          ? decryptMessage(sentMessage.content, chatId)
+          : "",
+      };
 
+      setMessages((prevMessages) => [...prevMessages, displayMessage]);
+
+      // ✅ Send the ENCRYPTED message via WebSocket
       if (socketConnected) {
-        SocketService.sendMessage(sentMessage);
+        SocketService.sendMessage(sentMessage); // keep content encrypted
       }
 
       if (typingTimeout) {
@@ -1345,12 +1364,6 @@ export default function ChatMessage({
     } catch (error) {
       console.error("Error sending message:", error);
       Alert.alert("Error", "Failed to send message");
-      setNewMessage(messageContent);
-      if (isValidFileOverride) {
-        setSelectedFile(fileOverride);
-      } else {
-        setSelectedFile(fileToSend);
-      }
     } finally {
       setSending(false);
     }
@@ -1441,7 +1454,7 @@ export default function ChatMessage({
         setShowFileOptions(false);
       }
     } catch (e) {
-      console.log("[v0] selectVideoFromLibrary error:", e?.message);
+      console.log(" selectVideoFromLibrary error:", e?.message);
       Alert.alert("Error", "Failed to select video");
     }
   };
@@ -1475,7 +1488,7 @@ export default function ChatMessage({
         setShowFileOptions(false);
       }
     } catch (e) {
-      console.log("[v0] recordVideoWithCamera error:", e?.message);
+      console.log(" recordVideoWithCamera error:", e?.message);
       Alert.alert("Error", "Failed to record video");
     }
   };
@@ -1514,7 +1527,7 @@ export default function ChatMessage({
         setShowFileOptions(false);
       }
     } catch (error) {
-      console.error("[v0] Error selecting image:", error);
+      console.error(" Error selecting image:", error);
       Alert.alert("Error", "Failed to select image");
     }
   };
@@ -1543,7 +1556,7 @@ export default function ChatMessage({
         setShowFileOptions(false);
       }
     } catch (error) {
-      console.error("[v0] Error selecting document:", error);
+      console.error(" Error selecting document:", error);
       Alert.alert("Error", "Failed to select document");
     }
   };
@@ -1971,9 +1984,9 @@ export default function ChatMessage({
         chatId,
       });
 
-      console.log("[v0] Call initiated to:", otherUser?.name);
+      console.log(" Call initiated to:", otherUser?.name);
     } catch (e) {
-      console.log("[v0] initiateVoiceCall error:", e.message);
+      console.log(" initiateVoiceCall error:", e.message);
       Alert.alert("Call Failed", "Unable to initiate the call.");
       setCalling(false);
     }
@@ -1999,7 +2012,7 @@ export default function ChatMessage({
       setVideoCalleeInfo(otherUser);
 
       console.log(
-        "[v0] 📹 Initiating video call to:",
+        " 📹 Initiating video call to:",
         otherUser?.name,
         "ID:",
         otherUser?._id
@@ -2014,7 +2027,7 @@ export default function ChatMessage({
         chatId,
       });
     } catch (e) {
-      console.log("[v0] ❌ initiateVideoCall error:", e.message);
+      console.log(" ❌ initiateVideoCall error:", e.message);
       Alert.alert("Call Failed", "Unable to initiate the video call.");
       setVideoCalling(false);
     }
@@ -2022,7 +2035,7 @@ export default function ChatMessage({
   const startAgoraConnection = async (callType = "voice") => {
     try {
       if (callType === "video") {
-        console.log("[v0] Requesting camera permissions for video call...");
+        console.log(" Requesting camera permissions for video call...");
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== "granted") {
           Alert.alert(
@@ -2032,7 +2045,7 @@ export default function ChatMessage({
           setVideoCalling(false);
           return;
         }
-        console.log("[v0] Camera permissions granted");
+        console.log(" Camera permissions granted");
       }
 
       if (!AGORA_APP_ID) {
@@ -2056,7 +2069,7 @@ export default function ChatMessage({
 
       let engine = engineRef.current;
       if (!engine) {
-        console.log("[v0] Creating new Agora engine...");
+        console.log(" Creating new Agora engine...");
         engine = createAgoraRtcEngine();
         engineRef.current = engine;
         engine.initialize({
@@ -2076,32 +2089,32 @@ export default function ChatMessage({
             engine.setDefaultAudioRouteToSpeakerphone(true);
           }
         } catch (e) {
-          console.log("[v0] enable audio/route error:", e.message);
+          console.log(" enable audio/route error:", e.message);
         }
 
         if (callType === "video") {
           try {
-            console.log("[v0] Enabling video...");
+            console.log(" Enabling video...");
             engine.enableVideo && engine.enableVideo();
             engine.enableLocalVideo && engine.enableLocalVideo(true);
-            console.log("[v0] Starting video preview...");
+            console.log(" Starting video preview...");
             engine.startPreview && engine.startPreview();
             if (engine.setVideoProfile) {
               engine.setVideoProfile(VideoProfileType.VideoProfile360p);
             }
-            console.log("[v0] Video enabled and preview started");
+            console.log(" Video enabled and preview started");
           } catch (e) {
-            console.log("[v0] enable video error:", e.message);
+            console.log(" enable video error:", e.message);
           }
         }
       }
 
       const handler = {
         onJoinChannelSuccess: (connection, elapsed) => {
-          console.log("[v0] onJoinChannelSuccess:", connection, elapsed);
+          console.log(" onJoinChannelSuccess:", connection, elapsed);
           if (callType === "video") {
             setVideoLocalUid(connection.localUid || 0);
-            console.log("[v0] Local video UID:", connection.localUid);
+            console.log(" Local video UID:", connection.localUid);
           }
           if (callType === "voice") {
             setInCall(true);
@@ -2114,16 +2127,16 @@ export default function ChatMessage({
           }
         },
         onUserJoined: (connection, remoteUid, elapsed) => {
-          console.log("[v0] onUserJoined:", remoteUid);
+          console.log(" onUserJoined:", remoteUid);
           if (callType === "voice") {
             setRemoteUid(remoteUid);
           } else {
             setVideoRemoteUid(remoteUid);
-            console.log("[v0] Remote video UID:", remoteUid);
+            console.log(" Remote video UID:", remoteUid);
           }
         },
         onUserOffline: (connection, remoteUid, reason) => {
-          console.log("[v0] onUserOffline:", remoteUid, reason);
+          console.log(" onUserOffline:", remoteUid, reason);
           if (callType === "voice") {
             setRemoteUid(null);
           } else {
@@ -2131,21 +2144,21 @@ export default function ChatMessage({
           }
         },
         onConnectionStateChanged: (connection, state, reason) => {
-          console.log("[v0] Connection state changed:", state, reason);
+          console.log(" Connection state changed:", state, reason);
         },
         onError: (err, msg) => {
-          console.log("[v0] Agora error:", err, msg);
+          console.log(" Agora error:", err, msg);
         },
       };
       engine.registerEventHandler(handler);
       agoraHandlerRef.current = handler;
 
-      console.log("[v0] Joining channel:", chatId);
+      console.log(" Joining channel:", chatId);
       await engine.joinChannel(token, chatId, 0, {
         clientRoleType: ClientRoleType.ClientRoleBroadcaster,
       });
     } catch (e) {
-      console.log("[v0] startAgoraConnection error:", e?.message);
+      console.log(" startAgoraConnection error:", e?.message);
       if (callType === "voice") {
         setCalling(false);
         setInCall(false);
@@ -2177,7 +2190,7 @@ export default function ChatMessage({
 
       await startAgoraConnection("voice");
     } catch (e) {
-      console.log("[v0] acceptIncomingCall error:", e.message);
+      console.log(" acceptIncomingCall error:", e.message);
       Alert.alert("Error", "Failed to accept call");
     }
   };
@@ -2203,7 +2216,7 @@ export default function ChatMessage({
 
       await startAgoraConnection("video");
     } catch (e) {
-      console.log("[v0] acceptIncomingVideoCall error:", e.message);
+      console.log(" acceptIncomingVideoCall error:", e.message);
       Alert.alert("Error", "Failed to accept video call");
       setInVideoCall(false);
     }
@@ -2224,7 +2237,7 @@ export default function ChatMessage({
       chatId,
     });
 
-    console.log("[v0] Voice call rejected");
+    console.log(" Voice call rejected");
   };
 
   const rejectIncomingVideoCall = () => {
@@ -2242,7 +2255,7 @@ export default function ChatMessage({
       chatId,
     });
 
-    console.log("[v0] Video call rejected");
+    console.log(" Video call rejected");
   };
 
   const endVoiceCall = async () => {
@@ -2275,9 +2288,9 @@ export default function ChatMessage({
         chatId,
       });
 
-      console.log("[v0] Voice call ended");
+      console.log(" Voice call ended");
     } catch (e) {
-      console.log("[v0] endVoiceCall error:", e.message);
+      console.log(" endVoiceCall error:", e.message);
     }
   };
 
@@ -2312,9 +2325,9 @@ export default function ChatMessage({
         chatId,
       });
 
-      console.log("[v0] Video call ended");
+      console.log(" Video call ended");
     } catch (e) {
-      console.log("[v0] endVideoCall error:", e.message);
+      console.log(" endVideoCall error:", e.message);
     }
   };
 
@@ -2326,7 +2339,7 @@ export default function ChatMessage({
       await engine.muteLocalAudioStream(next);
       setIsMuted(next);
     } catch (e) {
-      console.log("[v0] toggleMute error:", e?.message);
+      console.log(" toggleMute error:", e?.message);
     }
   };
 
@@ -2344,7 +2357,7 @@ export default function ChatMessage({
       }
       setSpeakerOn(next);
     } catch (e) {
-      console.log("[v0] toggleSpeaker error:", e?.message);
+      console.log(" toggleSpeaker error:", e?.message);
     }
   };
 
@@ -2356,7 +2369,7 @@ export default function ChatMessage({
       await engine.muteLocalAudioStream(next);
       setIsVideoMuted(next);
     } catch (e) {
-      console.log("[v0] toggleVideoMute error:", e?.message);
+      console.log(" toggleVideoMute error:", e?.message);
     }
   };
 
@@ -2370,7 +2383,7 @@ export default function ChatMessage({
       }
       setVideoCameraOn(next);
     } catch (e) {
-      console.log("[v0] toggleVideoCamera error:", e?.message);
+      console.log(" toggleVideoCamera error:", e?.message);
     }
   };
 
@@ -2388,7 +2401,7 @@ export default function ChatMessage({
       }
       setVideoSpeakerOn(next);
     } catch (e) {
-      console.log("[v0] toggleVideoSpeaker error:", e?.message);
+      console.log(" toggleVideoSpeaker error:", e?.message);
     }
   };
 
@@ -2699,7 +2712,7 @@ export default function ChatMessage({
                       Alert.alert("Downloaded", "Saved to app documents");
                     }
                   } catch (e) {
-                    console.error("[v0] image preview download error:", e);
+                    console.error(" image preview download error:", e);
                     Alert.alert("Error", "Failed to download image");
                   } finally {
                     setDownloadingId(null);
@@ -2779,7 +2792,7 @@ export default function ChatMessage({
                       Alert.alert("Downloaded", "Saved to app documents");
                     }
                   } catch (e) {
-                    console.error("[v0] spreview download error:", e);
+                    console.error(" spreview download error:", e);
                     Alert.alert("Error", "Failed to download video");
                   } finally {
                     setDownloadingId(null);
@@ -2876,11 +2889,11 @@ export default function ChatMessage({
                     )}
                     onLoadStart={() => setDocWebError(false)}
                     onError={(e) => {
-                      console.log("[v0] WebView onError:", e?.nativeEvent);
+                      console.log(" WebView onError:", e?.nativeEvent);
                       setDocWebError(true);
                     }}
                     onHttpError={(e) => {
-                      console.log("[v0] WebView onHttpError:", e?.nativeEvent);
+                      console.log(" WebView onHttpError:", e?.nativeEvent);
                       setDocWebError(true);
                     }}
                   />
@@ -2945,7 +2958,7 @@ export default function ChatMessage({
                       Alert.alert("Downloaded", `Saved to: ${uri}`);
                     }
                   } catch (e) {
-                    console.error("[v0] doc preview download error:", e);
+                    console.error(" doc preview download error:", e);
                     Alert.alert("Error", "Failed to download file");
                   } finally {
                     setDownloadingId(null);

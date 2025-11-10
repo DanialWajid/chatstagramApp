@@ -15,6 +15,7 @@ import {
   Animated,
   TextInput,
 } from "react-native";
+import { encryptMessage, decryptMessage } from "../../utils/encryption";
 import * as SecureStore from "expo-secure-store";
 import axios from "axios";
 import { useAuthStore } from "../../store/authStore";
@@ -154,7 +155,7 @@ const ChatPage = () => {
   const navbarTranslateY = useRef(new Animated.Value(0)).current;
   const isScrollingDown = useRef(false);
 
-  const API_URL = "http://192.168.100.15:8000/api";
+  const API_URL = "http://192.168.0.110:8000/api";
 
   // Enhanced Socket Connection with better error handling and reconnection
   useEffect(() => {
@@ -602,8 +603,22 @@ const ChatPage = () => {
           ? "You: "
           : `${senderName}: `
         : "";
-      return `${prefix}${chat.latestMessage.content}`;
+
+      let messageContent = chat.latestMessage.content;
+
+      // ✅ Decrypt if it exists
+      if (messageContent) {
+        try {
+          messageContent = decryptMessage(messageContent, chat._id); // use the chatId
+        } catch (err) {
+          console.warn("Failed to decrypt last message:", err);
+          // fallback to encrypted text if decryption fails
+        }
+      }
+
+      return `${prefix}${messageContent}`;
     }
+
     return chat.isGroupChat ? "Group created" : "Start a conversation";
   };
 
